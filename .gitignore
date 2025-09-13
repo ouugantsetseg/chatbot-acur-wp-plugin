@@ -1,0 +1,22 @@
+# macOS
+.DS_Store
+
+# Composer
+/vendor/
+/composer.lock
+
+# Node (if you bundle assets)
+node_modules/
+dist/
+
+# Logs/archives
+*.log
+*.zip
+
+# IDE/editor
+.vscode/
+.idea/
+
+# Env
+.env
+.env.*
