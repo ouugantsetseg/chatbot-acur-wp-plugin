@@ -13,31 +13,43 @@ class ACURCB_Settings {
     if (!current_user_can('manage_options')) return;
 
     if ($_SERVER['REQUEST_METHOD']==='POST' && check_admin_referer('acurcb_settings')) {
-      $opt = [
-        'api_base' => esc_url_raw($_POST['api_base'] ?? ''),
-        'shared_secret' => sanitize_text_field($_POST['shared_secret'] ?? ''),
-      ];
-      update_option(self::OPT, $opt);
-      echo '<div class="updated"><p>Saved.</p></div>';
+      // Settings could be expanded here for local matching configuration
+      echo '<div class="updated"><p>Settings updated.</p></div>';
     }
-    $api = esc_attr(self::get('api_base'));
-    $sec = esc_attr(self::get('shared_secret'));
     ?>
     <div class="wrap">
       <h1>ACUR Chatbot — Settings</h1>
+
+      <div class="notice notice-info">
+        <p><strong>Local Matching Enabled:</strong> This chatbot now uses local PHP-based question matching instead of external APIs. No additional configuration is required.</p>
+      </div>
+
+      <h2>How It Works</h2>
+      <p>The chatbot uses advanced text similarity algorithms to match user questions with your FAQ entries:</p>
+      <ul>
+        <li><strong>Keyword Matching:</strong> Identifies common words between user questions and FAQ content</li>
+        <li><strong>Text Similarity:</strong> Uses Jaccard similarity and Levenshtein distance for fuzzy matching</li>
+        <li><strong>Tag-based Matching:</strong> Gives higher priority to matches found in FAQ tags</li>
+        <li><strong>Smart Scoring:</strong> Combines multiple matching methods for best results</li>
+      </ul>
+
+      <h2>Performance Statistics</h2>
+      <?php
+      global $wpdb;
+      $faq_count = $wpdb->get_var("SELECT COUNT(*) FROM faqs");
+      $feedback_count = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}acur_feedback WHERE helpful = 1");
+      $total_feedback = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}acur_feedback");
+      $escalation_count = $wpdb->get_var("SELECT COUNT(*) FROM {$wpdb->prefix}acur_escalations");
+      ?>
+      <table class="form-table">
+        <tr><th>Total FAQ Entries</th><td><?php echo intval($faq_count); ?></td></tr>
+        <tr><th>Positive Feedback</th><td><?php echo intval($feedback_count); ?> out of <?php echo intval($total_feedback); ?> responses</td></tr>
+        <tr><th>Escalation Requests</th><td><?php echo intval($escalation_count); ?></td></tr>
+      </table>
+
       <form method="post">
         <?php wp_nonce_field('acurcb_settings'); ?>
-        <table class="form-table">
-          <tr><th>FastAPI Base URL</th><td>
-            <input type="url" name="api_base" class="regular-text" placeholder="http://127.0.0.1:8000" value="<?php echo $api; ?>">
-            <p class="description">Your Python matcher API root</p>
-          </td></tr>
-          <tr><th>Shared Secret (optional)</th><td>
-            <input type="text" name="shared_secret" class="regular-text" value="<?php echo $sec; ?>">
-            <p class="description">If your backend expects a header like <code>X-ACUR-Secret</code>.</p>
-          </td></tr>
-        </table>
-        <p><button class="button button-primary">Save</button></p>
+        <p><em>Future settings for local matching configuration can be added here.</em></p>
       </form>
     </div>
     <?php

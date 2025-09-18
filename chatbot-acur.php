@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name: ACUR Chatbot
- * Description: Floating chatbot widget + FAQ admin + proxy to Python matcher API.
+ * Description: Floating chatbot widget with local PHP-based FAQ matching. No external APIs required.
  * Version:     0.1.0
  * Author:      Swin students Team
  */
@@ -14,13 +14,14 @@ define('ACURCB_URL', plugin_dir_url(__FILE__));
 
 require_once ACURCB_DIR . 'includes/class-acur-settings.php';
 require_once ACURCB_DIR . 'includes/class-acur-admin.php';
+require_once ACURCB_DIR . 'includes/class-acur-matcher.php';
 require_once ACURCB_DIR . 'includes/class-acur-rest.php';
 
 register_activation_hook(__FILE__, function () {
     global $wpdb;
-    $table = $wpdb->prefix . 'faqs'; // 
+    $table = $wpdb->prefix . 'faqs';
     $charset = $wpdb->get_charset_collate();
-    $sql = "CREATE TABLE IF NOT EXISTS `faqs` (
+    $sql = "CREATE TABLE IF NOT EXISTS `{$table}` (
       `id` INT AUTO_INCREMENT PRIMARY KEY,
       `question` TEXT NOT NULL,
       `answer`   TEXT NOT NULL,
