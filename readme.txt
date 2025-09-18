@@ -1,4 +1,5 @@
 === WP Chatbot MVP (No-API) ===
+
 Contributors: Swinburn Students
 Requires at least: 5.8
 Tested up to: 6.x
