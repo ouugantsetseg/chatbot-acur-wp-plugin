@@ -25,67 +25,54 @@ class ACURCB_REST {
     ]);
   }
 
-  private static function api_base() {
-    return trailingslashit( ACURCB_Settings::get('api_base') );
-  }
-  private static function headers() {
-    $h = ['Content-Type'=>'application/json'];
-    $sec = ACURCB_Settings::get('shared_secret');
-    if ($sec) $h['X-ACUR-Secret'] = $sec;
-    return $h;
-  }
 
   static function match($req) {
-  $api = self::api_base();
-  if (!$api) return new WP_REST_Response(['detail'=>'FastAPI base URL not configured'], 502);
+    $question = sanitize_text_field($req['q']);
+    $session_id = sanitize_text_field($req['session_id'] ?: '');
 
-  // Ensure exactly one slash before 'match'
-  $url = add_query_arg([
-    'q'          => $req['q'],
-    'session_id' => $req['session_id'] ?: '',
-    'top_k'      => 5,
-  ], trailingslashit($api) . 'match');
+    if (empty($question)) {
+      return new WP_REST_Response(['detail' => 'Question parameter is required'], 400);
+    }
 
-  // MUST be GET (not wp_remote_post)
-  $r = wp_remote_get($url, ['timeout'=>10]);
-  if (is_wp_error($r)) return new WP_REST_Response(['detail'=>$r->get_error_message()], 502);
+    // Use local matcher instead of external API
+    $result = ACURCB_Matcher::match($question, 5);
 
-  $code = wp_remote_retrieve_response_code($r);
-  $body = wp_remote_retrieve_body($r);
-  $json = json_decode($body, true);
-  if (!is_array($json)) $json = ['detail'=>'Bad backend JSON','raw'=>$body];
-  return new WP_REST_Response($json, $code ?: 502);
-}
+    return new WP_REST_Response($result, 200);
+  }
 
 
 
   static function feedback($req) {
-    $api = self::api_base(); if (!$api) return new WP_Error('no_api','Not configured', ['status'=>500]);
-    $r = wp_remote_post($api.'feedback', [
-      'timeout'=>8, 'headers'=>self::headers(),
-      'body'=> wp_json_encode([
-        'session_id' => sanitize_text_field($req->get_param('session_id')),
-        'faq_id'     => sanitize_text_field($req->get_param('faq_id')),
-        'helpful'    => (bool)$req->get_param('helpful'),
-      ])
-    ]);
-    if (is_wp_error($r)) return $r;
-    $code = wp_remote_retrieve_response_code($r);
-    return new WP_REST_Response(json_decode(wp_remote_retrieve_body($r), true), $code);
+    $session_id = sanitize_text_field($req->get_param('session_id'));
+    $faq_id = $req->get_param('faq_id') ? intval($req->get_param('faq_id')) : null;
+    $helpful = (bool)$req->get_param('helpful');
+
+    // Store feedback locally
+    $success = ACURCB_Matcher::store_feedback($session_id, $faq_id, $helpful);
+
+    if ($success) {
+      return new WP_REST_Response(['status' => 'success', 'message' => 'Feedback recorded'], 200);
+    } else {
+      return new WP_REST_Response(['status' => 'error', 'message' => 'Failed to record feedback'], 500);
+    }
   }
 
   static function escalate($req) {
-    $api = self::api_base(); if (!$api) return new WP_Error('no_api','Not configured', ['status'=>500]);
-    $r = wp_remote_post($api.'escalate', [
-      'timeout'=>8, 'headers'=>self::headers(),
-      'body'=> wp_json_encode([
-        'session_id'    => sanitize_text_field($req->get_param('session_id')),
-        'user_query'    => wp_strip_all_tags($req->get_param('user_query')),
-        'contact_email' => sanitize_email($req->get_param('contact_email')),
-      ])
-    ]);
-    if (is_wp_error($r)) return $r;
-    $code = wp_remote_retrieve_response_code($r);
-    return new WP_REST_Response(json_decode(wp_remote_retrieve_body($r), true), $code);
+    $session_id = sanitize_text_field($req->get_param('session_id'));
+    $user_query = wp_strip_all_tags($req->get_param('user_query'));
+    $contact_email = sanitize_email($req->get_param('contact_email'));
+
+    if (empty($contact_email) || !is_email($contact_email)) {
+      return new WP_REST_Response(['status' => 'error', 'message' => 'Valid email address is required'], 400);
+    }
+
+    // Store escalation locally
+    $success = ACURCB_Matcher::store_escalation($session_id, $user_query, $contact_email);
+
+    if ($success) {
+      return new WP_REST_Response(['status' => 'success', 'message' => 'Escalation request recorded'], 200);
+    } else {
+      return new WP_REST_Response(['status' => 'error', 'message' => 'Failed to record escalation'], 500);
+    }
   }
 }

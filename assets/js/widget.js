@@ -19,7 +19,11 @@
     <div class="acurcb-body" id="acurcb-body"></div>
     <form id="acurcb-form">
       <input id="acurcb-input" type="text" placeholder="Type your question..." autocomplete="off" required />
-      <button>Send</button>
+      <button type="submit" aria-label="Send message">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/>
+        </svg>
+      </button>
     </form>
   `;
   document.body.append(btn, panel);
@@ -28,12 +32,94 @@
   const input = panel.querySelector('#acurcb-input');
   const form = panel.querySelector('#acurcb-form');
 
+  // Conversation state
+  let conversationStarted = false;
+  let sessionHistory = [];
+
   function addMsg(role, html) {
     const el = document.createElement('div');
     el.className = 'acurcb-msg ' + role;
     el.innerHTML = html;
     body.appendChild(el);
     body.scrollTop = body.scrollHeight;
+  }
+
+  function showWelcomeMessage() {
+    if (!conversationStarted) {
+      conversationStarted = true;
+      const welcomeMessages = [
+        "Hi there! 👋 I'm here to help answer your questions. What can I assist you with today?",
+        "Hello! Welcome to ACUR support. How can I help you today?",
+        "Hi! I'm your virtual assistant. Feel free to ask me anything!"
+      ];
+      const welcomeMsg = welcomeMessages[Math.floor(Math.random() * welcomeMessages.length)];
+      addMsg('bot', welcomeMsg);
+    }
+  }
+
+  function detectIntent(question) {
+    const q = question.toLowerCase().trim();
+
+    // Greetings
+    if (/^(hi|hello|hey|good morning|good afternoon|good evening)/.test(q)) {
+      return { type: 'greeting', confidence: 0.9 };
+    }
+
+    // Thanks
+    if (/^(thank|thanks|thx|ty|thank you)/.test(q)) {
+      return { type: 'thanks', confidence: 0.9 };
+    }
+
+    // Simple responses
+    if (/^(bye|goodbye|see you|exit|quit)$/.test(q)) {
+      return { type: 'goodbye', confidence: 0.9 };
+    }
+
+    return { type: 'question', confidence: 0.7 };
+  }
+
+  function getConversationalResponse(intent, answer = null, score = 0) {
+    const responses = {
+      greeting: [
+        "Hello! Great to meet you. What can I help you with?",
+        "Hi there! I'm here to assist you. What's your question?",
+        "Hey! How can I help you today?"
+      ],
+      thanks: [
+        "You're very welcome! Is there anything else I can help you with?",
+        "Happy to help! Do you have any other questions?",
+        "Glad I could assist! Feel free to ask if you need anything else."
+      ],
+      goodbye: [
+        "Goodbye! Feel free to come back anytime if you have more questions.",
+        "See you later! I'm here whenever you need help.",
+        "Take care! Don't hesitate to ask if you need assistance again."
+      ]
+    };
+
+    if (responses[intent.type]) {
+      return responses[intent.type][Math.floor(Math.random() * responses[intent.type].length)];
+    }
+
+    // For FAQ answers, add conversational context
+    if (answer && score > 0.7) {
+      const intros = [
+        "Great question! ",
+        "I can help with that. ",
+        "Here's what I found: ",
+        "Let me explain: "
+      ];
+      return intros[Math.floor(Math.random() * intros.length)] + answer;
+    } else if (answer && score > 0.4) {
+      const intros = [
+        "I think this might help: ",
+        "This could be what you're looking for: ",
+        "Here's something related: "
+      ];
+      return intros[Math.floor(Math.random() * intros.length)] + answer;
+    }
+
+    return answer;
   }
 
   function showHelpful(faqId) {
@@ -87,47 +173,90 @@
   }
 
   async function ask(q) {
+    // Store conversation history
+    sessionHistory.push({ role: 'user', content: q, timestamp: Date.now() });
+
     addMsg('user', q);
     input.value = ''; input.focus();
-    addMsg('bot', '<em>Thinking…</em>');
 
-   try {
-  const url = new URL(`${REST}match`);
-  url.searchParams.set('q', q);
-  url.searchParams.set('session_id', sid);
+    // Detect intent first
+    const intent = detectIntent(q);
 
-  const r = await fetch(url);
-  let data = null;
-  try { data = await r.json(); } catch (_) {}
+    // Handle simple conversational responses
+    if (intent.type !== 'question') {
+      setTimeout(() => {
+        const response = getConversationalResponse(intent);
+        addMsg('bot', response);
+        sessionHistory.push({ role: 'bot', content: response, timestamp: Date.now() });
+      }, 500 + Math.random() * 1000); // More natural delay
+      return;
+    }
 
-  if (!r.ok || !data || typeof data.answer === 'undefined') {
-    const msg = (data && (data.detail || data.message || data.error)) ||
-                `Request failed (${r.status})`;
-    body.lastChild.innerHTML = 'Sorry—something went wrong. ' + msg;
-    return;
-  }
+    // Show thinking with more realistic delay
+    addMsg('bot', '<em>Let me think about that...</em>');
 
-  body.lastChild.innerHTML = data.answer;
-  showHelpful(data.id || null);
+    try {
+      // Add realistic delay for thinking
+      await new Promise(resolve => setTimeout(resolve, 800 + Math.random() * 1200));
 
-  if (Array.isArray(data.alternates) && data.alternates.length) {
-    const alts = document.createElement('div');
-    alts.className = 'acurcb-alts';
-    alts.innerHTML = '<div class="title">Related:</div>' +
-      data.alternates.slice(0,3).map(a => `<button type="button" class="alt">${a.question}</button>`).join('');
-    alts.querySelectorAll('button.alt').forEach(b=>{
-      b.onclick = ()=> ask(b.innerText);
-    });
-    body.appendChild(alts);
-  }
-} catch (e) {
-  body.lastChild.innerHTML = 'Sorry—network error.';
-}
+      const url = new URL(`${REST}match`);
+      url.searchParams.set('q', q);
+      url.searchParams.set('session_id', sid);
 
+      const r = await fetch(url);
+      let data = null;
+      try { data = await r.json(); } catch (_) {}
+
+      if (!r.ok || !data || typeof data.answer === 'undefined') {
+        const msg = (data && (data.detail || data.message || data.error)) ||
+                    `Request failed (${r.status})`;
+        body.lastChild.innerHTML = 'Sorry—something went wrong. ' + msg;
+        return;
+      }
+
+      // Generate conversational response
+      const conversationalAnswer = getConversationalResponse(intent, data.answer, data.score);
+      body.lastChild.innerHTML = conversationalAnswer;
+
+      // Store in history
+      sessionHistory.push({ role: 'bot', content: conversationalAnswer, timestamp: Date.now() });
+
+      // Show follow-up suggestions for good matches
+      if (data.score > 0.6) {
+        setTimeout(() => {
+          const suggestions = [
+            "Is there anything else you'd like to know about this topic?",
+            "Would you like me to explain anything in more detail?",
+            "Do you have any follow-up questions?"
+          ];
+          const suggestion = suggestions[Math.floor(Math.random() * suggestions.length)];
+          addMsg('bot', `<em>${suggestion}</em>`);
+        }, 2000);
+      }
+
+      showHelpful(data.id || null);
+
+      if (Array.isArray(data.alternates) && data.alternates.length) {
+        const alts = document.createElement('div');
+        alts.className = 'acurcb-alts';
+        alts.innerHTML = '<div class="title">You might also be interested in:</div>' +
+          data.alternates.slice(0,3).map(a => `<button type="button" class="alt">${a.question}</button>`).join('');
+        alts.querySelectorAll('button.alt').forEach(b=>{
+          b.onclick = ()=> ask(b.innerText);
+        });
+        body.appendChild(alts);
+      }
+    } catch (e) {
+      body.lastChild.innerHTML = 'Sorry—I\'m having trouble connecting right now. Could you try again?';
+    }
   }
 
   // events
-  btn.onclick = ()=> { panel.classList.toggle('open'); input.focus(); };
+  btn.onclick = ()=> {
+    panel.classList.toggle('open');
+    input.focus();
+    showWelcomeMessage();
+  };
   panel.querySelector('.acurcb-close').onclick = ()=> panel.classList.remove('open');
   form.onsubmit = (e)=> { e.preventDefault(); ask(input.value.trim()); };
 })();
