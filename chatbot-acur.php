@@ -30,10 +30,56 @@ register_activation_hook(__FILE__, function () {
     ) $charset;";
     require_once ABSPATH . 'wp-admin/includes/upgrade.php';
     dbDelta($sql);
+        // Create feedback, escalations and escalation responses tables at activation
+        $fb_table = $wpdb->prefix . 'acur_feedback';
+        $es_table = $wpdb->prefix . 'acur_escalations';
+        $resp_table = $wpdb->prefix . 'acur_escalation_responses';
+
+        $sql_fb = "CREATE TABLE IF NOT EXISTS $fb_table (
+            id int(11) NOT NULL AUTO_INCREMENT,
+            session_id varchar(255) NOT NULL,
+            faq_id int(11),
+            helpful tinyint(1) NOT NULL,
+            created_at timestamp DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY session_id (session_id),
+            KEY faq_id (faq_id)
+        ) $charset;";
+
+        $sql_es = "CREATE TABLE IF NOT EXISTS $es_table (
+            id int(11) NOT NULL AUTO_INCREMENT,
+            session_id varchar(255) NOT NULL,
+            user_query text NOT NULL,
+            contact_email varchar(255) NOT NULL,
+            status varchar(50) DEFAULT 'pending',
+            created_at timestamp DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (id),
+            KEY session_id (session_id),
+            KEY status (status)
+        ) $charset;";
+
+        $sql_resp = "CREATE TABLE IF NOT EXISTS $resp_table (
+                id int(11) NOT NULL AUTO_INCREMENT,
+                escalation_id int(11) NOT NULL,
+                responder varchar(255) DEFAULT 'admin',
+                response_text text NOT NULL,
+                email_sent tinyint(1) DEFAULT 0,
+                email_sent_at datetime NULL,
+                email_error text NULL,
+                created_at timestamp DEFAULT CURRENT_TIMESTAMP,
+                PRIMARY KEY (id),
+                KEY escalation_id (escalation_id)
+            ) $charset;";
+
+        dbDelta($sql_fb);
+        dbDelta($sql_es);
+        dbDelta($sql_resp);
 });
 
 add_action('admin_menu', function () {
     add_menu_page('Chatbot', 'Chatbot', 'manage_options', 'acur-chatbot', ['ACURCB_Admin','render_faqs'], 'dashicons-format-chat', 45);
+    add_submenu_page('acur-chatbot','Escalation Responses','Escalation Responses','manage_options','acur-chatbot-escalations',['ACURCB_Admin','render_escalations']);
+    add_submenu_page('acur-chatbot','Reports','Reports','manage_options','acur-chatbot-reports',['ACURCB_Admin','render_reports']);
     add_submenu_page('acur-chatbot','Settings','Settings','manage_options','acur-chatbot-settings',['ACURCB_Settings','render']);
 });
 
@@ -61,7 +107,7 @@ add_action('wp_enqueue_scripts', function () {
         'restBase'    => esc_url_raw( get_rest_url(null, 'acur-chatbot/v1/') ), // trailing slash
         'siteNonce'   => wp_create_nonce('wp_rest'),
         'siteUrl'     => home_url('/'),
-        'widgetTitle' => 'ACUR Chatbot',
+        'widgetTitle' => 'Connect with ACUR Chatbot',
     ];
 
     // Attach BEFORE the script so `window.ACURCB_CFG` exists when widget.js runs
