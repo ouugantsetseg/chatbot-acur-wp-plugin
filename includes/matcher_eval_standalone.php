@@ -1,12 +1,6 @@
 <?php
 /**
- * matcher_eval_standalone.php
- * ---------------------------
- * Standalone evaluator that embeds your matcher logic (Levenshtein + Jaccard + tag boost)
- * and runs accuracy/latency metrics against a labeled query set.
- *
- * No WordPress required. No $wpdb. FAQs are loaded from faqs.csv.
- *
+ 
  * Usage:
  *   php -d display_errors=1 -d error_reporting=E_ALL matcher_eval_standalone.php \
  *     --faqs="faqs.csv" \ 
@@ -330,4 +324,27 @@ file_put_contents($metrics_path, json_encode($result["metrics"], JSON_PRETTY_PRI
 
 echo "Wrote results: $results_path\n";
 echo "Wrote metrics: $metrics_path\n";
+
+// --- Suggested: Print summary table after evaluation ---
+$metrics = json_decode(file_get_contents($metrics_path), true);
+echo "\n=== Evaluation Summary ===\n";
+foreach ($metrics as $k => $v) {
+    printf("%-25s : %s\n", $k, $v);
+}
+
+echo "\nTop 10 Query Results:\n";
+$results = [];
+if (($fh = fopen($results_path, "r")) !== false) {
+    $headers = fgetcsv($fh);
+    $i = 0;
+    while (($row = fgetcsv($fh)) !== false && $i < 10) {
+        $assoc = array_combine($headers, $row);
+        printf("Q: %-40s | Gold: %-4s | Pred: %-4s | Score: %-6s | Rank: %-2s | Latency: %-6s ms\n",
+            mb_substr($assoc["query"], 0, 40),
+            $assoc["gold_id"], $assoc["pred_id"], $assoc["pred_score"], $assoc["rank"], $assoc["latency_ms"]
+        );
+        $i++;
+    }
+    fclose($fh);
+}
 ?>

@@ -329,4 +329,125 @@ class ACURCB_Matcher {
             'status' => 'pending'
         ]);
     }
+
+    public static function suggest_tags($question, $answer, $limit = 8) {
+    global $wpdb;
+
+    $text = strtolower( trim( (string)$question . ' ' . (string)$answer ) );
+
+    // --- domain stopwords (add/tune freely) ---
+    $STOP = [
+        'a','an','and','the','is','are','was','were','be','been','being','to','of','in','on','for','with','by','at',
+        'from','it','that','this','these','those','as','or','if','then','but','so','than','such','may','can','could',
+        'should','would','will','about','into','within','acur','conference','western','sydney','university','campus',
+        'please','thanks','thank','you','we','our','your','i','me','my','us','they','them','their'
+    ];
+
+    // Known tags (from your own data) to boost real domain phrases
+    $known_tag_set = [];
+    $rows = $wpdb->get_col("SELECT tags FROM faqs WHERE tags IS NOT NULL");
+    if ($rows) {
+        foreach ($rows as $js) {
+            $arr = json_decode($js, true);
+            if (is_array($arr)) {
+                foreach ($arr as $t) {
+                    $t = strtolower(trim($t));
+                    if ($t !== '') $known_tag_set[$t] = true;
+                }
+            }
+        }
+    }
+
+    // Tokenize
+    preg_match_all('/[a-z0-9][a-z0-9\-]+/u', $text, $m);
+    $tokens = $m[0] ?? [];
+
+    // Keep clean words
+    $clean = [];
+    foreach ($tokens as $w) {
+        $w = trim($w, "- \t\n\r\0\x0B");
+        if ($w === '' || strlen($w) < 3) continue;
+        if (is_numeric($w)) continue;
+        if (in_array($w, $STOP, true)) continue;
+        $clean[] = $w;
+    }
+
+    // Unigrams + simple bigrams to capture phrases (“hearing loop”, “wheelchair access”)
+    $scores = [];
+    $bigrams = [];
+    for ($i=0; $i < count($clean); $i++) {
+        $w = $clean[$i];
+
+        // base score from frequency
+        $scores[$w] = ($scores[$w] ?? 0) + 1.0;
+
+        // bigram
+        if ($i+1 < count($clean)) {
+            $w2 = $clean[$i+1];
+            // avoid repeating the exact same word twice
+            if ($w !== $w2) {
+                $bg = $w . ' ' . $w2;
+                // prefer meaningful bigrams (both >=3 chars already guaranteed)
+                $bigrams[$bg] = ($bigrams[$bg] ?? 0) + 1.0;
+            }
+        }
+    }
+
+    // Merge bigrams and add a gentle bonus
+    foreach ($bigrams as $bg => $cnt) {
+        // Slightly more weight for phrases
+        $scores[$bg] = ($scores[$bg] ?? 0) + (1.2 * $cnt);
+    }
+
+    // Boost items that match your existing tags
+    foreach (array_keys($scores) as $k) {
+        if (isset($known_tag_set[$k])) {
+            $scores[$k] += 2.0; // strong boost for already-used tags
+        }
+    }
+
+    // Light fuzzy collapsing: if "wheelchair" and "wheelchair access" both exist,
+    // keep the phrase and downweight the unigram.
+    foreach (array_keys($scores) as $k) {
+        if (strpos($k, ' ') !== false) {
+            // phrase — downweight its contained tokens a bit
+            [$a,$b] = explode(' ', $k, 2);
+            if (isset($scores[$a])) $scores[$a] *= 0.9;
+            if (isset($scores[$b])) $scores[$b] *= 0.9;
+        }
+    }
+
+    // Rank
+    arsort($scores);
+
+    // Post-filter: remove very generic leftovers and duplicates differing only by hyphen/space
+    $out = [];
+    $seen_norm = [];
+    foreach ($scores as $term => $s) {
+        $norm = str_replace('-', ' ', $term);
+        if (isset($seen_norm[$norm])) continue;
+        $seen_norm[$norm] = true;
+        $out[] = $term;
+        if (count($out) >= ($limit * 2)) break; // take a wider pool before final trim
+    }
+
+    // Final tidy: prefer phrases first, then singles, cap to $limit
+    usort($out, function($a, $b) use ($scores) {
+        $pa = (strpos($a, ' ') !== false) ? 1 : 0;
+        $pb = (strpos($b, ' ') !== false) ? 1 : 0;
+        if ($pa !== $pb) return $pb <=> $pa; // phrases first
+        return ($scores[$b] <=> $scores[$a]);
+    });
+
+    // Make them look nice for admins
+    $out = array_map(function($t) {
+        return trim(preg_replace('/\s+/', ' ', $t));
+    }, $out);
+
+    // Ensure uniqueness and cap
+    $out = array_values(array_unique($out));
+    return array_slice($out, 0, $limit);
+}
+
+
 }
