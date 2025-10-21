@@ -54,7 +54,21 @@ class ACURCB_Admin {
       }
     }
 
-    $rows = $wpdb->get_results("SELECT id, question, LEFT(answer, 120) AS answer, tags, updated_at FROM faqs ORDER BY updated_at DESC, id DESC LIMIT 500");
+    // Pagination setup
+    $per_page = 10;
+    $current_page = isset($_GET['paged']) ? max(1, intval($_GET['paged'])) : 1;
+    $offset = ($current_page - 1) * $per_page;
+    
+    // Get total count
+    $total_faqs = $wpdb->get_var("SELECT COUNT(*) FROM faqs");
+    $total_pages = ceil($total_faqs / $per_page);
+    
+    // Get paginated results
+    $rows = $wpdb->get_results($wpdb->prepare(
+      "SELECT id, question, LEFT(answer, 120) AS answer, tags, updated_at FROM faqs ORDER BY updated_at DESC, id DESC LIMIT %d OFFSET %d",
+      $per_page,
+      $offset
+    ));
     ?>
     <div class="wrap">
       <h1>ACUR Chatbot — FAQs</h1>
@@ -86,7 +100,14 @@ class ACURCB_Admin {
         </p>
       </form>
 
-      <h2>Existing FAQs (<?php echo count($rows); ?> total)</h2>
+      <h2>
+        Existing FAQs (<?php echo number_format($total_faqs); ?> total)
+        <?php if ($total_pages > 1): ?>
+          <span style="font-size: 14px; font-weight: normal; color: #666;">
+            — Showing <?php echo number_format($offset + 1); ?>-<?php echo number_format(min($offset + $per_page, $total_faqs)); ?>
+          </span>
+        <?php endif; ?>
+      </h2>
       <div style="margin-bottom: 10px;">
         <input type="text" id="faq-search" placeholder="Search FAQs by question, answer, or tags..." style="width: 400px; padding: 8px; border: 1px solid #ddd; border-radius: 4px;">
       </div>
@@ -111,7 +132,7 @@ class ACURCB_Admin {
             <td class="question-cell">
               <div class="question-text"><?php echo esc_html(wp_trim_words($r->question, 15)); ?></div>
               <div class="row-actions">
-                <span class="edit"><a href="#" class="edit-faq">Edit</a> | </span>
+                <span class="edit"><a href="#" class="edit-faq" data-id="<?php echo intval($r->id); ?>">Edit</a> | </span>
                 <span class="delete">
                   <a href="#" class="delete-faq" data-id="<?php echo intval($r->id); ?>">Delete</a>
                 </span>
@@ -139,8 +160,51 @@ class ACURCB_Admin {
             </td>
           </tr>
         <?php endforeach; ?>
+        <?php if (empty($rows)): ?>
+          <tr>
+            <td colspan="6" style="text-align: center; padding: 20px; color: #666;">
+              No FAQs found. Add your first FAQ above.
+            </td>
+          </tr>
+        <?php endif; ?>
         </tbody>
       </table>
+
+      <?php if ($total_pages > 1): ?>
+        <div class="tablenav bottom">
+          <div class="tablenav-pages">
+            <span class="displaying-num"><?php echo number_format($total_faqs); ?> items</span>
+            <?php
+            $base_url = admin_url('admin.php?page=acur-chatbot');
+            
+            // First page
+            if ($current_page > 1) {
+              echo '<a class="button" href="' . esc_url(add_query_arg('paged', 1, $base_url)) . '">« First</a> ';
+            }
+            
+            // Previous page
+            if ($current_page > 1) {
+              echo '<a class="button" href="' . esc_url(add_query_arg('paged', $current_page - 1, $base_url)) . '">‹ Previous</a> ';
+            }
+            
+            // Page numbers
+            echo '<span class="paging-input">';
+            echo 'Page ' . $current_page . ' of ' . number_format($total_pages);
+            echo '</span> ';
+            
+            // Next page
+            if ($current_page < $total_pages) {
+              echo '<a class="button" href="' . esc_url(add_query_arg('paged', $current_page + 1, $base_url)) . '">Next ›</a> ';
+            }
+            
+            // Last page
+            if ($current_page < $total_pages) {
+              echo '<a class="button" href="' . esc_url(add_query_arg('paged', $total_pages, $base_url)) . '">Last »</a>';
+            }
+            ?>
+          </div>
+        </div>
+      <?php endif; ?>
 
       <!-- Delete form (hidden) -->
       <form method="post" id="delete-form" style="display: none;">
@@ -193,6 +257,31 @@ class ACURCB_Admin {
         }
         .faq-row:hover .row-actions {
           visibility: visible;
+        }
+        .tablenav {
+          height: auto;
+          margin: 10px 0;
+          padding: 8px 0;
+        }
+        .tablenav-pages {
+          float: right;
+          margin: 0;
+        }
+        .tablenav-pages .button {
+          margin-left: 5px;
+        }
+        .tablenav-pages .displaying-num {
+          margin-right: 10px;
+          color: #666;
+        }
+        .tablenav-pages .paging-input {
+          margin: 0 5px;
+          color: #666;
+        }
+        .tablenav::after {
+          content: "";
+          display: table;
+          clear: both;
         }
         #faq-search {
           border: 1px solid #ddd;
@@ -249,21 +338,43 @@ class ACURCB_Admin {
           document.querySelectorAll('.edit-faq').forEach(button => {
             button.addEventListener('click', function(e) {
               e.preventDefault();
+              
+              // Get ID directly from button (same as delete button pattern)
+              const id = this.dataset.id;
+              console.log('Edit button clicked. ID:', id, 'Button element:', this);
+              
+              if (!id) {
+                alert('Error: Could not find FAQ ID. The Edit button is missing data-id attribute.');
+                console.error('Edit button clicked but no ID found. Button:', this);
+                return;
+              }
+              
               const row = this.closest('.faq-row');
-              const id = row.dataset.id;
-
+              
               // Highlight the row being edited
               document.querySelectorAll('.form-highlight').forEach(el => {
                 el.classList.remove('form-highlight');
               });
-              row.classList.add('form-highlight');
+              if (row) {
+                row.classList.add('form-highlight');
+              }
 
               // Fetch full FAQ data
-              fetch('<?php echo esc_js( admin_url('admin-ajax.php?action=acurcb_get_faq&id=') ); ?>' + id, {
+              const ajaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>?action=acurcb_get_faq&id=' + id;
+              console.log('Fetching FAQ from URL:', ajaxUrl);
+              
+              fetch(ajaxUrl, {
                 credentials: 'same-origin'
               })
-              .then(r => r.json())
+              .then(r => {
+                if (!r.ok) {
+                  throw new Error('HTTP error! status: ' + r.status);
+                }
+                return r.json();
+              })
               .then(faq => {
+                console.log('Received FAQ data:', faq);
+                
                 if (faq && faq.id) {
                   document.getElementById('acur_action').value = 'update';
                   document.getElementById('acur_id').value = faq.id;
@@ -291,11 +402,14 @@ class ACURCB_Admin {
                   setTimeout(() => {
                     document.getElementById('acur_q').focus();
                   }, 300);
+                } else {
+                  console.error('FAQ data is invalid or missing ID:', faq);
+                  alert('Error: FAQ data not found or invalid. Check the browser console for details.');
                 }
               })
               .catch(err => {
                 console.error('Error fetching FAQ:', err);
-                alert('Error loading FAQ for editing.');
+                alert('Error loading FAQ for editing: ' + err.message + '\nCheck the browser console for details.');
               });
             });
           });
@@ -431,7 +545,7 @@ class ACURCB_Admin {
     }
 
     // Filters & pagination inputs
-  $raw_status = sanitize_text_field($_GET['status'] ?? 'pending');
+  $raw_status = sanitize_text_field($_GET['status'] ?? 'all');
   $status_filter = ($raw_status === 'all') ? '' : $raw_status;
     $search_q = sanitize_text_field($_GET['q'] ?? '');
     $paged = max(1, intval($_GET['paged'] ?? 1));
@@ -465,7 +579,7 @@ class ACURCB_Admin {
     if (empty($rows)) {
       echo '<p>No escalations found.</p>';
     } else {
-      echo '<table class="widefat"><thead><tr><th>ID</th><th>Submitted</th><th>Query</th><th>Contact</th><th>Status</th><th>Mail</th><th>Actions</th></tr></thead><tbody>';
+      echo '<table class="widefat"><thead><tr><th>ID</th><th>Submitted</th><th>Query</th><th>Contact</th><th>Status</th><th>Actions</th></tr></thead><tbody>';
       foreach ($rows as $p) {
         echo '<tr>';
         echo '<td>' . intval($p['id']) . '</td>';
@@ -473,20 +587,6 @@ class ACURCB_Admin {
         echo '<td>' . esc_html(mb_strimwidth($p['user_query'], 0, 120, '...')) . '</td>';
         echo '<td>' . esc_html($p['contact_email']) . '</td>';
         echo '<td>' . esc_html($p['status']) . '</td>';
-        // Fetch latest response for this escalation to show mail status
-        $latest = $wpdb->get_row($wpdb->prepare("SELECT email_sent, email_sent_at, email_error FROM $resp_table WHERE escalation_id=%d ORDER BY created_at DESC LIMIT 1", $p['id']), ARRAY_A);
-        $mail_cell = '&mdash;';
-        if ($latest) {
-          if (!empty($latest['email_sent'])) {
-            $mail_cell = 'Sent';
-            if (!empty($latest['email_sent_at'])) $mail_cell .= ' @ ' . esc_html($latest['email_sent_at']);
-          } else {
-            $err = !empty($latest['email_error']) ? esc_html($latest['email_error']) : 'Failed to send';
-            $short = (strlen($err) > 60) ? esc_html(mb_substr($err,0,60)) . '...' : esc_html($err);
-            $mail_cell = '<span title="' . esc_attr($err) . '" style="color:#a00;">Failed: ' . $short . '</span>';
-          }
-        }
-        echo '<td>' . $mail_cell . '</td>';
         echo '<td>';
         // Pending -> show Respond only. Responded -> show View history only.
         if ($p['status'] === 'pending') {
@@ -494,7 +594,7 @@ class ACURCB_Admin {
           echo '<a href="' . $respond_link . '">Respond</a>';
         } else {
           $history_link = esc_url( admin_url('admin.php?page=acur-chatbot-escalations&view=history&id=' . intval($p['id'])) );
-          echo '<a href="' . $history_link . '">View history</a>';
+          echo '<a href="' . $history_link . '">View responces</a>';
         }
         echo '</td>';
         echo '</tr>';
@@ -536,7 +636,7 @@ class ACURCB_Admin {
           if ($esc['status'] !== 'pending') {
             // Already responded
             echo '<p><em>This escalation was already responded to. Use View history to inspect prior replies.</em></p>';
-            echo '<p><a href="' . esc_url(add_query_arg(['view'=>'history','id'=>$eid])) . '">View history</a></p>';
+            echo '<p><a href="' . esc_url(add_query_arg(['view'=>'history','id'=>$eid])) . '">View responces</a></p>';
           } else {
             // Show only the respond form
             echo '<h3>Post a Response</h3>';
@@ -555,9 +655,17 @@ class ACURCB_Admin {
           echo '<p><strong>Contact:</strong> ' . esc_html($esc['contact_email']) . '</p>';
           echo '<p><strong>Status:</strong> ' . esc_html($esc['status']) . '</p>';
 
-          $responses = $wpdb->get_results($wpdb->prepare("SELECT responder, response_text, created_at, email_sent, email_sent_at, email_error FROM $resp_table WHERE escalation_id=%d ORDER BY created_at DESC", $eid), ARRAY_A);
+          // Debug: Log the query being executed
+          $debug_query = $wpdb->prepare("SELECT responder, response_text, created_at, email_sent, email_sent_at, email_error FROM $resp_table WHERE escalation_id=%d ORDER BY created_at DESC", $eid);
+          error_log('[ACUR Debug] Fetching responses for escalation #' . $eid . ' - Query: ' . $debug_query);
+          
+          $responses = $wpdb->get_results($debug_query, ARRAY_A);
+          
+          // Debug: Log the result count
+          error_log('[ACUR Debug] Found ' . count($responses) . ' responses for escalation #' . $eid);
+          
           if ($responses) {
-            echo '<h3>Responses</h3><ul>';
+            echo '<h3>Responses (' . count($responses) . ' found)</h3><ul>';
             foreach ($responses as $r) {
               $mail_status = '';
               if (!empty($r['email_sent'])) {
@@ -570,7 +678,13 @@ class ACURCB_Admin {
             }
             echo '</ul>';
           } else {
-            echo '<p>No responses yet.</p>';
+            // Show debug info
+            echo '<p><strong style="color:#a00">No responses yet.</strong></p>';
+            echo '<p style="font-size:12px;color:#666"><em>Debug: Response table = ' . esc_html($resp_table) . ', Escalation ID = ' . intval($eid) . '</em></p>';
+            echo '<p style="font-size:12px;color:#666"><em>Query: ' . esc_html($debug_query) . '</em></p>';
+            if ($wpdb->last_error) {
+              echo '<p style="font-size:12px;color:#a00"><strong>Database Error:</strong> ' . esc_html($wpdb->last_error) . '</p>';
+            }
           }
 
           // Show respond form only if escalation is pending
@@ -587,9 +701,7 @@ class ACURCB_Admin {
       }
     }
 
-    echo '</div>';
-
-    echo '</div>';
+    echo '</div>'; // Close wrap div
   }
 
   // New page: Reports (feedback & escalation summaries)
@@ -685,11 +797,27 @@ class ACURCB_Admin {
     $pending = intval($wpdb->get_var("SELECT COUNT(*) FROM $es_table WHERE status='pending'"));
     $responded = intval($wpdb->get_var("SELECT COUNT(*) FROM $es_table WHERE status='responded'"));
 
-    echo '<h2 style="margin-top:24px">Escalation Report</h2>';
+    echo '<h2 style="margin-top:24px">Escalation Report';
+    if ($total_pages_reports > 1) {
+      echo ' <span style="font-size: 14px; font-weight: normal; color: #666;">';
+      echo '— Showing ' . number_format($offset_reports + 1) . '-' . number_format(min($offset_reports + $per_page_reports, $total_es));
+      echo '</span>';
+    }
+    echo '</h2>';
     echo '<p>Total escalations: <strong>' . $total_es . '</strong> — Pending: <strong>' . $pending . '</strong> — Responded: <strong>' . $responded . '</strong></p>';
 
-    // Recent escalations with mail status
-    $recent_es = $wpdb->get_results("SELECT id, user_query, contact_email, status, created_at FROM $es_table ORDER BY created_at DESC LIMIT 15", ARRAY_A);
+    // Pagination setup for escalations table
+    $per_page_reports = 15;
+    $current_page_reports = isset($_GET['esc_paged']) ? max(1, intval($_GET['esc_paged'])) : 1;
+    $offset_reports = ($current_page_reports - 1) * $per_page_reports;
+    $total_pages_reports = ceil($total_es / $per_page_reports);
+    
+    // Recent escalations with mail status (paginated)
+    $recent_es = $wpdb->get_results($wpdb->prepare(
+      "SELECT id, user_query, contact_email, status, created_at FROM $es_table ORDER BY created_at DESC LIMIT %d OFFSET %d",
+      $per_page_reports,
+      $offset_reports
+    ), ARRAY_A);
     if ($recent_es) {
       echo '<table class="widefat"><thead><tr><th>ID</th><th>Submitted</th><th>Query</th><th>Contact</th><th>Status</th><th>Mail</th></tr></thead><tbody>';
       foreach ($recent_es as $e) {
@@ -707,6 +835,43 @@ class ACURCB_Admin {
         echo '<tr><td>' . intval($e['id']) . '</td><td>' . esc_html($e['created_at']) . '</td><td>' . esc_html(mb_strimwidth($e['user_query'],0,120,'...')) . '</td><td>' . esc_html($e['contact_email']) . '</td><td>' . esc_html($e['status']) . '</td><td>' . $mail_cell . '</td></tr>';
       }
       echo '</tbody></table>';
+      
+      // Pagination controls
+      if ($total_pages_reports > 1) {
+        echo '<div class="tablenav bottom">';
+        echo '<div class="tablenav-pages">';
+        echo '<span class="displaying-num">' . number_format($total_es) . ' items</span>';
+        
+        $base_url_reports = admin_url('admin.php?page=acur-chatbot-reports');
+        
+        // First page
+        if ($current_page_reports > 1) {
+          echo '<a class="button" href="' . esc_url(add_query_arg('esc_paged', 1, $base_url_reports)) . '">« First</a> ';
+        }
+        
+        // Previous page
+        if ($current_page_reports > 1) {
+          echo '<a class="button" href="' . esc_url(add_query_arg('esc_paged', $current_page_reports - 1, $base_url_reports)) . '">‹ Previous</a> ';
+        }
+        
+        // Page numbers
+        echo '<span class="paging-input">';
+        echo 'Page ' . $current_page_reports . ' of ' . number_format($total_pages_reports);
+        echo '</span> ';
+        
+        // Next page
+        if ($current_page_reports < $total_pages_reports) {
+          echo '<a class="button" href="' . esc_url(add_query_arg('esc_paged', $current_page_reports + 1, $base_url_reports)) . '">Next ›</a> ';
+        }
+        
+        // Last page
+        if ($current_page_reports < $total_pages_reports) {
+          echo '<a class="button" href="' . esc_url(add_query_arg('esc_paged', $total_pages_reports, $base_url_reports)) . '">Last »</a>';
+        }
+        
+        echo '</div>';
+        echo '</div>';
+      }
     } else {
       echo '<p>No escalations yet.</p>';
     }
@@ -714,15 +879,33 @@ class ACURCB_Admin {
     echo '</div>';
   }
 
-  // Ensure responses table schema includes email_error (runtime-safe)
+  // Ensure responses table schema includes all email tracking columns (runtime-safe)
   private static function ensure_response_schema() {
     global $wpdb;
     $resp_table = $wpdb->prefix . 'acur_escalation_responses';
-    $col = $wpdb->get_results($wpdb->prepare("SHOW COLUMNS FROM $resp_table LIKE %s", 'email_error'));
-    if (empty($col)) {
-      // Add column
+    
+    // Check and add email_sent column
+    $col_sent = $wpdb->get_results($wpdb->prepare("SHOW COLUMNS FROM $resp_table LIKE %s", 'email_sent'));
+    if (empty($col_sent)) {
+      $sql = "ALTER TABLE {$resp_table} ADD COLUMN email_sent TINYINT(1) DEFAULT 0";
+      $wpdb->query($sql);
+      error_log('[ACUR] Added email_sent column to ' . $resp_table);
+    }
+    
+    // Check and add email_sent_at column
+    $col_sent_at = $wpdb->get_results($wpdb->prepare("SHOW COLUMNS FROM $resp_table LIKE %s", 'email_sent_at'));
+    if (empty($col_sent_at)) {
+      $sql = "ALTER TABLE {$resp_table} ADD COLUMN email_sent_at DATETIME NULL";
+      $wpdb->query($sql);
+      error_log('[ACUR] Added email_sent_at column to ' . $resp_table);
+    }
+    
+    // Check and add email_error column
+    $col_error = $wpdb->get_results($wpdb->prepare("SHOW COLUMNS FROM $resp_table LIKE %s", 'email_error'));
+    if (empty($col_error)) {
       $sql = "ALTER TABLE {$resp_table} ADD COLUMN email_error TEXT NULL";
       $wpdb->query($sql);
+      error_log('[ACUR] Added email_error column to ' . $resp_table);
     }
   }
 
@@ -733,8 +916,31 @@ add_action('wp_ajax_acurcb_get_faq', function () {
   if (!current_user_can('manage_options')) wp_die();
   global $wpdb;
   $id = intval($_GET['id'] ?? 0);
+  
+  error_log('[ACUR Edit FAQ] Request ID: ' . $id);
+  
+  if (!$id) {
+    error_log('[ACUR Edit FAQ] Error: No ID provided');
+    wp_send_json(['error' => 'No ID provided']);
+    return;
+  }
+  
   $row = $wpdb->get_row( $wpdb->prepare("SELECT id, question, answer, tags FROM faqs WHERE id=%d", $id), ARRAY_A );
-  wp_send_json($row ?: []);
+  
+  if ($wpdb->last_error) {
+    error_log('[ACUR Edit FAQ] Database error: ' . $wpdb->last_error);
+    wp_send_json(['error' => 'Database error: ' . $wpdb->last_error]);
+    return;
+  }
+  
+  if (!$row) {
+    error_log('[ACUR Edit FAQ] FAQ not found for ID: ' . $id);
+    wp_send_json(['error' => 'FAQ not found']);
+    return;
+  }
+  
+  error_log('[ACUR Edit FAQ] Success - returning FAQ: ' . json_encode($row));
+  wp_send_json($row);
 });
 
 // Capture wp_mail_failed info into a global temporarily

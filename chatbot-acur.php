@@ -107,7 +107,7 @@ add_action('wp_enqueue_scripts', function () {
         'restBase'    => esc_url_raw( get_rest_url(null, 'acur-chatbot/v1/') ), // trailing slash
         'siteNonce'   => wp_create_nonce('wp_rest'),
         'siteUrl'     => home_url('/'),
-        'widgetTitle' => 'Connect with ACUR Chatbot',
+        'widgetTitle' => 'Connect with ACUR',
     ];
 
     // Attach BEFORE the script so `window.ACURCB_CFG` exists when widget.js runs
