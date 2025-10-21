@@ -13,7 +13,7 @@
   const panel = document.createElement('div'); panel.id = 'acurcb-panel';
   panel.innerHTML = `
     <div class="acurcb-header">
-      <span>ACUR Chatbot</span>
+      <span>ACUR</span>
       <button class="acurcb-close" aria-label="Close">×</button>
     </div>
     <div class="acurcb-body" id="acurcb-body"></div>
