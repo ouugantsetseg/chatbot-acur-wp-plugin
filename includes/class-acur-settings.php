@@ -14,10 +14,10 @@ class ACURCB_Settings {
 
     // Handle saving settings
     if ($_SERVER['REQUEST_METHOD']==='POST' && check_admin_referer('acurcb_settings')) {
-        // Save OpenAI settings
-        $enabled = isset($_POST['openai_enabled']) ? 1 : 0;
-        $key = sanitize_text_field($_POST['openai_key'] ?? '');
-        update_option(self::OPT, ['openai_enabled'=>$enabled, 'openai_key'=>$key]);
+        // Save CohereAI settings
+        $enabled = isset($_POST['cohere_enabled']) ? 1 : 0;
+        $key = sanitize_text_field($_POST['cohere_key'] ?? '');
+        update_option(self::OPT, ['cohere_enabled'=>$enabled, 'cohere_key'=>$key]);
 
         echo '<div class="updated"><p>Settings updated.</p></div>';
     }
@@ -29,20 +29,20 @@ class ACURCB_Settings {
         <p><strong>Local Matching Enabled:</strong> This chatbot now uses local PHP-based question matching instead of external APIs. No additional configuration is required.</p>
       </div>
 
-      <h2>OpenAI API Settings</h2>
+      <h2>Cohere API Settings</h2>
       <form method="post">
         <?php wp_nonce_field('acurcb_settings'); ?>
         <table class="form-table">
           <tr>
-            <th>Enable OpenAI API</th>
+            <th>Enable Cohere API</th>
             <td>
-              <input type="checkbox" name="openai_enabled" value="1" <?php checked(self::get('openai_enabled'),1); ?> />
+              <input type="checkbox" name="cohere_enabled" value="1" <?php checked(self::get('cohere_enabled'),1); ?> />
             </td>
           </tr>
           <tr>
             <th>OpenAI API Key</th>
             <td>
-              <input type="text" name="openai_key" value="<?php echo esc_attr(self::get('openai_key')); ?>" size="50" />
+              <input type="text" name="cohere_key" value="<?php echo esc_attr(self::get('cohere_key')); ?>" size="50" />
             </td>
           </tr>
         </table>
