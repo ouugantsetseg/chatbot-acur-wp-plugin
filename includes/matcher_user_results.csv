@@ -1,0 +1,58 @@
+query,gold_id,pred_id,pred_score,rank,latency_ms
+"Can you explain what an abstract is?",4,9,0.626667,2,12.82
+"What should I include in the abstract section?",4,9,0.631304,2,0.641
+"How do I summarise my project for submission?",4,17,0.218008,,0.602
+"My project doesn’t really match the theme, can I still submit?",5,16,0.235191,5,0.681
+"Do submissions have to be strictly aligned to the theme?",5,18,0.219785,3,0.659
+"What if my work only loosely connects to the theme?",5,5,0.270766,1,0.624
+"Am I required to do a talk, or can I just do a poster?",6,16,0.233827,2,0.682
+"Do all presenters have to present orally?",6,6,0.212927,1,0.579
+"Can I choose between oral and poster presentation?",6,6,0.6345,1,0.659
+"What if I’m nervous about presenting?",7,13,0.307678,,0.574
+"I don’t like speaking in front of people — can I still join?",7,16,0.248008,,0.677
+"How does ACUR support presenters who are anxious?",7,13,0.18619,,0.608
+"What if my project isn’t high-quality?",8,5,0.25,,0.574
+"How do I know if my work is suitable?",8,18,0.188333,3,0.593
+"What if I think my research isn’t strong enough?",8,5,0.399984,2,0.616
+"Who looks at and approves the abstracts?",9,9,0.624818,1,0.578
+"Who decides whether my abstract is accepted?",9,9,0.66,1,0.581
+"Who are the reviewers for submissions?",9,9,0.24555,1,0.56
+"Does a class assignment count as research?",10,10,0.26244,1,0.636
+"What kinds of projects qualify as undergrad research?",10,10,0.284717,1,0.639
+"Can literature reviews be submitted as research?",10,15,0.2675,2,0.598
+"What if the audience asks something I can’t respond to?",11,5,0.212121,,0.681
+"How should I handle tough questions during my presentation?",11,6,0.597461,,0.646
+"What if I don’t know the answer on the spot?",11,9,0.220514,3,0.641
+"Can I submit if my project is still ongoing?",12,15,0.242879,,0.618
+"Is unfinished research allowed?",12,12,0.305964,1,0.542
+"Do I have to wait until I have final results?",12,6,0.252222,,0.625
+"Do I have to present to come to ACUR?",13,6,0.260769,,0.598
+"Is it possible to just attend as an audience member?",13,6,0.193462,,0.647
+"Can students join without submitting an abstract?",13,4,0.508408,3,0.608
+"Do I need to be in an official research program?",14,10,0.310984,3,0.635
+"Can I submit work I did in a class project?",14,15,0.25893,3,0.62
+"Is independent research eligible for submission?",14,18,0.57,,0.594
+"Are group projects allowed?",15,15,0.236961,1,0.539
+"Can a team submit together?",15,15,0.24461,1,0.551
+"Can one member present on behalf of a group?",15,15,0.213983,1,0.617
+"Are first-year students allowed to submit?",16,16,0.547143,1,0.606
+"Can second-year projects be presented?",16,16,0.288968,1,0.584
+"Do you accept early-stage undergrad research?",16,10,0.269216,,0.614
+"When is the best time to start preparing?",17,6,0.225427,,0.6
+"How early should I begin working on my abstract?",17,9,0.510935,4,0.625
+"Should I wait for the portal to open before writing?",17,6,0.208791,5,0.654
+"Is ACUR only for Australian students?",18,20,0.245606,,0.574
+"Can students from New Zealand or Pacific islands apply?",18,16,0.213838,4,0.641
+"Who is eligible based on location?",18,18,0.5,1,0.571
+"What should I wear at ACUR?",19,22,0.28,,0.553
+"Do I need to dress formally for presenting?",19,19,0.325759,1,0.602
+"Is there an official clothing requirement?",19,20,0.244286,2,0.586
+"Do I have to pay to attend ACUR?",20,6,0.27359,,0.58
+"What is the registration cost?",20,20,0.326667,1,0.552
+"Will my university cover the registration fee?",20,20,0.624269,1,0.606
+"Does ACUR pay for flights or hotels?",21,19,0.188183,4,0.584
+"Are travel costs included?",21,21,0.599256,1,0.538
+"Who pays for accommodation during the conference?",21,22,0.291769,2,0.608
+"What items should I take with me?",22,5,0.22619,3,0.586
+"Do I need to bring my poster or slides?",22,22,0.562393,1,0.611
+"What materials are useful to have at ACUR?",22,4,0.214632,4,0.617
