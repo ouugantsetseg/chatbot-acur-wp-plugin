@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: ACUR Chatbot
- * Description: Floating chatbot widget with local PHP-based FAQ matching. No external APIs required.
- * Version:     0.1.0
+ * Description: Floating chatbot widget with local PHP-based FAQ matching. With the Integration of OpenAI and Cohere AI API enabling.
+ * Version:     0.1.6
  * Author:      Swin students Team
  */
 

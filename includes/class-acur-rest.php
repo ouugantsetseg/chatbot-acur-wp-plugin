@@ -30,7 +30,7 @@ class ACURCB_REST {
             'permission_callback' => '__return_true',
         ]);
 
-        // ✅ New LLM endpoint (local fallback to Cohere)
+        // ✅ LLM endpoint now supports Cohere OR OpenAI
         register_rest_route('acur-chatbot/v1','/ask', [
             'methods' => 'GET',
             'callback' => [__CLASS__, 'ask'],
@@ -106,7 +106,7 @@ class ACURCB_REST {
     }
 
     /**
-     * Handles the /ask route: Tries local FAQ, then falls back to Cohere LLM.
+     * Handles the /ask route: Tries local FAQ, then falls back to OpenAI/Cohere LLM.
      * @param WP_REST_Request $req The request object.
      * @return WP_REST_Response
      */
@@ -125,23 +125,37 @@ class ACURCB_REST {
             return new WP_REST_Response($result, 200);
         }
 
-        // 2️⃣ If Cohere is enabled, call Cohere API
-        $enabled = ACURCB_Settings::get('cohere_enabled');
-        $apiKey = ACURCB_Settings::get('cohere_key');
+        // 2️⃣ Try OpenAI Fallback (Prioritized as the more common/powerful option)
+        $openai_enabled = ACURCB_Settings::get('openai_enabled');
+        $openai_key = ACURCB_Settings::get('openai_key');
 
-        if ($enabled && !empty($apiKey)) {
-            // CALL THE COHERE FUNCTION
-            $answer = self::ask_cohere($question, $apiKey, $session_id);
+        if ($openai_enabled && !empty($openai_key)) {
+            $answer = self::ask_openai($question, $openai_key, $session_id);
             if ($answer) {
                 return new WP_REST_Response([
                     'answer'=>$answer,
                     'score'=>0.8,
-                    'source'=>'cohere' // Source is now 'cohere'
+                    'source'=>'openai' 
                 ], 200);
             }
         }
 
-        // 3️⃣ Fallback
+        // 3️⃣ Try Cohere Fallback (Original logic)
+        $cohere_enabled = ACURCB_Settings::get('cohere_enabled');
+        $cohere_key = ACURCB_Settings::get('cohere_key');
+
+        if ($cohere_enabled && !empty($cohere_key)) {
+            $answer = self::ask_cohere($question, $cohere_key, $session_id);
+            if ($answer) {
+                return new WP_REST_Response([
+                    'answer'=>$answer,
+                    'score'=>0.8,
+                    'source'=>'cohere' 
+                ], 200);
+            }
+        }
+
+        // 4️⃣ Final Fallback
         return new WP_REST_Response([
             'answer'=>"Sorry, I couldn't find an answer.",
             'score'=>0,
@@ -149,7 +163,7 @@ class ACURCB_REST {
         ], 200);
     }
 
-    // --- START: New Dynamic RAG Function ---
+    // --- START: New Dynamic RAG Function (Shared by both APIs) ---
     /**
      * Dynamically fetches and caches the ACUR FAQ content for RAG.
      * Uses WordPress Transients for a 24-hour cache.
@@ -178,13 +192,7 @@ class ACURCB_REST {
             
             // --- Basic HTML Parsing & Cleaning (Needs verification based on actual page structure) ---
             
-            // Attempt to find content between specific markers. (Assuming the FAQ content is the main text block)
-            // Note: This simple method might include extraneous text or menus. For robust parsing,
-            // you'd typically need the DOMDocument class, but this simpler method works for many sites.
-            
             $faq_html = $html; 
-            
-            // Strip all HTML tags, convert HTML entities (like &amp;), and clean up extra whitespace
             $processed_text = wp_strip_all_tags($faq_html, true);
             $processed_text = html_entity_decode($processed_text);
             $processed_text = preg_replace('/[\r\n]+/', "\n", $processed_text);
@@ -205,8 +213,10 @@ class ACURCB_REST {
     }
     // --- END: New Dynamic RAG Function ---
 
+
     /**
      * Calls the Cohere Chat API using the Bearer token authorization scheme and RAG context.
+     * (ORIGINAL FUNCTION - KEPT AS REQUESTED)
      * @param string $question The user's query.
      * @param string $apiKey The Cohere API key.
      * @param string $session_id The user's session ID (for conversation history, though not fully used here).
@@ -215,7 +225,6 @@ class ACURCB_REST {
     public static function ask_cohere($question, $apiKey, $session_id = null) {
         $endpoint = "https://api.cohere.ai/v1/chat";
         
-        // Use the model provided by the user
         $model_name = 'command-a-03-2025'; 
 
         // 1. Dynamically retrieve the ACUR context (Cached!)
@@ -259,12 +268,76 @@ class ACURCB_REST {
         // Check for non-200 HTTP status (e.g., 401 Unauthorized, 400 Bad Request)
         if ($http_status !== 200) {
             error_log('Cohere API HTTP Error: ' . $http_status . ' - ' . ($data['message'] ?? 'Unknown Error'));
-            // Return specific error message to user if appropriate (optional)
-            // return "Error: Could not reach the AI service. Please check the logs.";
             return false;
         }
         
         // Cohere v1 Chat response is parsed to get the 'text' field
         return $data['text'] ?? false;
+    }
+
+    /**
+     * Calls the OpenAI Chat Completions API using the Bearer token authorization scheme and RAG context.
+     * (NEW FUNCTION - ADDED)
+     * @param string $question The user's query.
+     * @param string $apiKey The OpenAI API key.
+     * @param string $session_id The user's session ID (for conversation history, though not fully used here).
+     * @return string|false The model's answer or false on error.
+     */
+    public static function ask_openai($question, $apiKey, $session_id = null) {
+        $endpoint = "https://api.openai.com/v1/chat/completions";
+        $model_name = 'gpt-3.5-turbo'; // Recommended for cost-effective testing 
+
+        // 1. Dynamically retrieve the ACUR context (Cached!)
+        $acur_context = self::get_acur_context_cached(); 
+        
+        // 2. Define the system instructions and persona
+        $system_prompt = "You are the ACUR Chatbot, a helpful and professional assistant for the Australasian Council for Undergraduate Research (ACUR). Your primary goal is to answer user questions accurately using the provided context about ACUR's conferences and policies. If the answer to a specific ACUR question is not in the context, you must state that the information is not currently available in your knowledge base. For general knowledge questions (like math or science), you may use your general knowledge, but prioritize ACUR info.";
+
+        // 3. Construct the RAG payload for OpenAI (System + Context + User Message)
+        $body = [
+            'model' => $model_name, 
+            'messages' => [
+                // System message sets the persona and includes the RAG context
+                [
+                    'role' => 'system',
+                    'content' => "CONTEXT:\n" . $acur_context . "\n\nINSTRUCTIONS: " . $system_prompt,
+                ],
+                // User's message
+                [
+                    'role' => 'user',
+                    'content' => $question,
+                ],
+            ],
+            'temperature' => 0.2, // Lower temperature for more factual, context-based answers
+            'max_tokens' => 300 // Tokens for detailed RAG answers
+        ];
+        
+        $response = wp_remote_post($endpoint, [
+            'headers' => [
+                // Authorization header uses the Bearer Token scheme
+                'Authorization' => 'Bearer ' . $apiKey, 
+                'Content-Type' => 'application/json'
+            ],
+            'body' => wp_json_encode($body),
+            'timeout' => 15
+        ]);
+
+        if (is_wp_error($response)) {
+            error_log('OpenAI API Error: ' . $response->get_error_message());
+            return false;
+        }
+
+        $http_status = wp_remote_retrieve_response_code($response);
+        $body = wp_remote_retrieve_body($response);
+        $data = json_decode($body, true);
+
+        if ($http_status !== 200) {
+            error_log('OpenAI API HTTP Error: ' . $http_status . ' - ' . ($data['error']['message'] ?? 'Unknown Error'));
+            return false;
+        }
+        
+        // OpenAI response is parsed to get the 'content' field from the first choice's message
+        // Structure: $data['choices'][0]['message']['content']
+        return $data['choices'][0]['message']['content'] ?? false;
     }
 }
