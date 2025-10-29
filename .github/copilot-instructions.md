@@ -1,12 +1,11 @@
 # ACUR Chatbot Plugin — Copilot Instructions
 
 ## Overview
-This WordPress plugin provides a floating chatbot widget that matches user questions to a local FAQ knowledge base using PHP-based text similarity algorithms. No external APIs or AI services are required.
+This WordPress plugin provides a floating chatbot widget that matches user questions to a local FAQ knowledge base using PHP-based text similarity algorithms.
 
 ## Architecture
 - **Entry Point:** `chatbot-acur.php` — Loads all major classes and registers plugin hooks.
 - **FAQ Management:** `includes/class-acur-admin.php` — Handles CRUD for FAQs in the WordPress admin, stores tags as JSON.
-- **Matcher Logic:** `includes/class-acur-matcher.php` — Implements matching using Jaccard similarity, Levenshtein distance, and tag-based scoring. All matching is local and synchronous.
 - **REST API:** `includes/class-acur-rest.php` — Exposes endpoints for matching, feedback, and escalation. Used by the frontend widget.
 - **Settings:** `includes/class-acur-settings.php` — Renders settings/info page. Matching is always local; no config needed.
 - **Frontend Widget:** `assets/js/widget.js` and `assets/css/widget.css` — Implements the floating chatbot UI, interacts with REST API, manages session ID in localStorage.
@@ -15,7 +14,6 @@ This WordPress plugin provides a floating chatbot widget that matches user quest
 ## Developer Workflows
 - **Activate plugin** via WordPress admin. FAQ table is auto-created.
 - **Add FAQs** via the Chatbot KB admin page. Tags are comma-separated and stored as JSON.
-- **Test matching** by using the `[wp_chatbot]` shortcode or interacting with the widget.
 - **REST API endpoints:**
   - `GET /wp-json/acur-chatbot/v1/match?q=...` — Returns best FAQ match.
   - `POST /wp-json/acur-chatbot/v1/feedback` — Records feedback.
