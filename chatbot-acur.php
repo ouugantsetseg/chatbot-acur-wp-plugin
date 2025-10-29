@@ -1,8 +1,8 @@
 <?php
 /**
  * Plugin Name: ACUR Chatbot
- * Description: Floating chatbot widget with local PHP-based FAQ matching. No external APIs required.
- * Version:     0.1.0
+ * Description: Floating chatbot widget with local PHP-based FAQ matching. With the Integration of OpenAI and Cohere AI API enabling.
+ * Version:     0.1.6
  * Author:      Swin students Team
  */
 
@@ -17,7 +17,7 @@ require_once ACURCB_DIR . 'includes/class-acur-admin.php';
 require_once ACURCB_DIR . 'includes/class-acur-matcher.php';
 require_once ACURCB_DIR . 'includes/class-acur-rest.php';
 
-// Register REST API routes
+// Register REST API routes for chatbot
 add_action('rest_api_init', ['ACURCB_REST', 'register_routes']);
 
 register_activation_hook(__FILE__, function () {
