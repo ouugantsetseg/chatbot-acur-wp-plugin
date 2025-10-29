@@ -34,7 +34,7 @@ class ACURCB_REST {
       return new WP_REST_Response(['detail' => 'Question parameter is required'], 400);
     }
 
-    // Use local matcher instead of external API
+    // Use BM25 matcher instead of semantic matcher
     $result = ACURCB_Matcher::match($question, 5);
 
     return new WP_REST_Response($result, 200);

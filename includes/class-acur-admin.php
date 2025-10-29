@@ -76,7 +76,9 @@ class ACURCB_Admin {
             <th scope="row"><label for="acur_t">Tags</label></th>
             <td>
               <input name="tags" class="regular-text" id="acur_t" placeholder="billing, support, technical, help">
-              <p class="description">Enter comma-separated tags to help categorize this FAQ (e.g., billing, support, technical)</p>
+              <button type="button" class="button" id="generate-tags-btn" style="margin-left: 10px;">Generate Tags</button>
+              <span id="tag-generation-status" style="margin-left: 10px; color: #666;"></span>
+              <p class="description">Enter comma-separated tags to help categorize this FAQ, or click "Generate Tags" to auto-generate from question and answer</p>
             </td>
           </tr>
         </table>
@@ -244,6 +246,58 @@ class ACURCB_Admin {
           }
 
           document.getElementById('clear-form-btn').addEventListener('click', clearForm);
+
+          // Auto-generate tags functionality
+          document.getElementById('generate-tags-btn').addEventListener('click', function() {
+            const question = document.getElementById('acur_q').value;
+            const answer = document.getElementById('acur_a').value;
+            const statusEl = document.getElementById('tag-generation-status');
+
+            if (!question.trim() || !answer.trim()) {
+              statusEl.textContent = 'Please enter both question and answer first';
+              statusEl.style.color = '#d63638';
+              return;
+            }
+
+            statusEl.textContent = 'Generating tags...';
+            statusEl.style.color = '#666';
+            this.disabled = true;
+
+            // AJAX request to generate tags
+            fetch('<?php echo admin_url('admin-ajax.php'); ?>', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+              },
+              body: new URLSearchParams({
+                action: 'acurcb_generate_tags',
+                question: question,
+                answer: answer,
+                nonce: '<?php echo wp_create_nonce('acurcb_generate_tags'); ?>'
+              })
+            })
+            .then(response => response.json())
+            .then(data => {
+              if (data.success && data.data.tags) {
+                document.getElementById('acur_t').value = data.data.tags.join(', ');
+                statusEl.textContent = '✓ Tags generated successfully';
+                statusEl.style.color = '#00a32a';
+                setTimeout(() => {
+                  statusEl.textContent = '';
+                }, 3000);
+              } else {
+                statusEl.textContent = 'Error generating tags';
+                statusEl.style.color = '#d63638';
+              }
+            })
+            .catch(error => {
+              statusEl.textContent = 'Error: ' + error.message;
+              statusEl.style.color = '#d63638';
+            })
+            .finally(() => {
+              this.disabled = false;
+            });
+          });
 
           // Edit functionality
           document.querySelectorAll('.edit-faq').forEach(button => {
@@ -735,6 +789,42 @@ add_action('wp_ajax_acurcb_get_faq', function () {
   $id = intval($_GET['id'] ?? 0);
   $row = $wpdb->get_row( $wpdb->prepare("SELECT id, question, answer, tags FROM faqs WHERE id=%d", $id), ARRAY_A );
   wp_send_json($row ?: []);
+});
+
+// AJAX endpoint to generate tags from question and answer
+add_action('wp_ajax_acurcb_generate_tags', function () {
+  if (!current_user_can('manage_options')) {
+    wp_send_json_error('Unauthorized');
+    return;
+  }
+
+  // Verify nonce
+  if (!isset($_POST['nonce']) || !wp_verify_nonce($_POST['nonce'], 'acurcb_generate_tags')) {
+    wp_send_json_error('Invalid nonce');
+    return;
+  }
+
+  $question = sanitize_text_field($_POST['question'] ?? '');
+  $answer = wp_kses_post($_POST['answer'] ?? '');
+
+  if (empty($question) || empty($answer)) {
+    wp_send_json_error('Question and answer are required');
+    return;
+  }
+
+  // Get all FAQs for BM25 context
+  global $wpdb;
+  $all_faqs = $wpdb->get_results("SELECT id, question, answer FROM faqs", ARRAY_A);
+
+  // Generate tags using the matcher
+  $tags = ACURCB_Matcher::suggest_tags($question, $answer, 8, $all_faqs);
+
+  if (empty($tags)) {
+    wp_send_json_error('No tags could be generated');
+    return;
+  }
+
+  wp_send_json_success(['tags' => $tags]);
 });
 
 // Capture wp_mail_failed info into a global temporarily

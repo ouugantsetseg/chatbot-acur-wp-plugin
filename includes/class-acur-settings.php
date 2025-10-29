@@ -12,9 +12,46 @@ class ACURCB_Settings {
   static function render() {
     if (!current_user_can('manage_options')) return;
 
+    $message = '';
+    $message_type = 'updated';
+
     if ($_SERVER['REQUEST_METHOD']==='POST' && check_admin_referer('acurcb_settings')) {
-      // Settings could be expanded here for local matching configuration
-      echo '<div class="updated"><p>Settings updated.</p></div>';
+      // Handle DB Migration
+      if (isset($_POST['run_db_migration'])) {
+        ob_start();
+        include plugin_dir_path(__FILE__) . 'db_migration_add_embeddings.php';
+        $output = ob_get_clean();
+        $message = '<strong>Database Migration Results:</strong><pre style="background: #f5f5f5; padding: 10px; overflow-x: auto;">' . esc_html($output) . '</pre>';
+      }
+      // Handle Batch Embedding
+      elseif (isset($_POST['run_batch_embed'])) {
+        ob_start();
+        include plugin_dir_path(__FILE__) . 'batch_embed_faqs.php';
+        $output = ob_get_clean();
+        $message = '<strong>Batch Embedding Results:</strong><pre style="background: #f5f5f5; padding: 10px; overflow-x: auto;">' . esc_html($output) . '</pre>';
+      }
+      // Handle Semantic Matching Test
+      elseif (isset($_POST['run_test_semantic'])) {
+        ob_start();
+        include plugin_dir_path(__FILE__) . 'test_semantic_matching.php';
+        $output = ob_get_clean();
+        $message = '<strong>Semantic Matching Test Results:</strong><pre style="background: #f5f5f5; padding: 10px; overflow-x: auto; max-height: 600px;">' . esc_html($output) . '</pre>';
+      }
+      // Handle Simple Semantic Test
+      elseif (isset($_POST['run_test_simple'])) {
+        ob_start();
+        include plugin_dir_path(__FILE__) . 'test_semantic_simple.php';
+        $output = ob_get_clean();
+        $message = '<strong>Simple Semantic Test Results:</strong><pre style="background: #f5f5f5; padding: 10px; overflow-x: auto;">' . esc_html($output) . '</pre>';
+      }
+      // Settings update
+      else {
+        $message = 'Settings updated.';
+      }
+    }
+
+    if ($message) {
+      echo '<div class="' . esc_attr($message_type) . '"><p>' . $message . '</p></div>';
     }
     ?>
     <div class="wrap">
@@ -47,7 +84,56 @@ class ACURCB_Settings {
         <tr><th>Escalation Requests</th><td><?php echo intval($escalation_count); ?></td></tr>
       </table>
 
-      <form method="post">
+      <h2>Database Management</h2>
+      <p>Use these tools to manage the database structure and FAQ embeddings.</p>
+
+      <form method="post" style="display: inline-block; margin-right: 10px;">
+        <?php wp_nonce_field('acurcb_settings'); ?>
+        <input type="hidden" name="run_db_migration" value="1">
+        <button type="submit" class="button button-secondary" onclick="return confirm('Run database migration to add embedding columns?\n\nThis will:\n- Add embedding column to FAQs table\n- Add embedding_version column\n- Add embedding_updated_at column\n\nThis is safe to run multiple times.');">
+          Run Database Migration
+        </button>
+      </form>
+
+      <form method="post" style="display: inline-block;">
+        <?php wp_nonce_field('acurcb_settings'); ?>
+        <input type="hidden" name="run_batch_embed" value="1">
+        <button type="submit" class="button button-primary" onclick="return confirm('Generate embeddings for all FAQs?\n\nThis will:\n- Process all FAQs in the database\n- Generate vector embeddings for semantic search\n- Update embedding timestamps\n\nThis may take a few moments for large FAQ databases.');">
+          Generate Embeddings for All FAQs
+        </button>
+      </form>
+
+      <div class="notice notice-warning" style="margin-top: 20px;">
+        <p><strong>Note:</strong> Run the Database Migration first if you haven't already. Then use the Generate Embeddings button to create embeddings for all your FAQs.</p>
+      </div>
+
+      <h2 style="margin-top: 40px;">Testing & Validation</h2>
+      <p>Test the semantic matching system to ensure it's working correctly.</p>
+
+      <form method="post" style="display: inline-block; margin-right: 10px;">
+        <?php wp_nonce_field('acurcb_settings'); ?>
+        <input type="hidden" name="run_test_simple" value="1">
+        <button type="submit" class="button button-secondary">
+          Run Simple Test
+        </button>
+      </form>
+
+      <form method="post" style="display: inline-block;">
+        <?php wp_nonce_field('acurcb_settings'); ?>
+        <input type="hidden" name="run_test_semantic" value="1">
+        <button type="submit" class="button button-secondary">
+          Run Full Semantic Test
+        </button>
+      </form>
+
+      <div class="notice notice-info" style="margin-top: 20px;">
+        <p>
+          <strong>Simple Test:</strong> Quick verification test with 5 sample queries (fast, ~5 seconds)<br>
+          <strong>Full Semantic Test:</strong> Comprehensive accuracy test comparing old vs new matcher (slower, ~1-2 minutes)
+        </p>
+      </div>
+
+      <form method="post" style="margin-top: 30px;">
         <?php wp_nonce_field('acurcb_settings'); ?>
         <p><em>Future settings for local matching configuration can be added here.</em></p>
       </form>
