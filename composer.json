@@ -1,0 +1,6 @@
+{
+    "require": {
+        "nadar/stemming": "^1.1",
+        "hugsbrugs/php-synonym": "dev-master"
+    }
+}

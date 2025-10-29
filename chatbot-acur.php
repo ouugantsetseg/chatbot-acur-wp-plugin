@@ -12,9 +12,17 @@ define('ACURCB_VER', '0.1.0');
 define('ACURCB_DIR', plugin_dir_path(__FILE__));
 define('ACURCB_URL', plugin_dir_url(__FILE__));
 
+// Load Composer dependencies
+if (file_exists(ACURCB_DIR . 'vendor/autoload.php')) {
+    require_once ACURCB_DIR . 'vendor/autoload.php';
+}
+
+require_once ACURCB_DIR . 'includes/class-acur-text-processor.php';
 require_once ACURCB_DIR . 'includes/class-acur-settings.php';
 require_once ACURCB_DIR . 'includes/class-acur-admin.php';
 require_once ACURCB_DIR . 'includes/class-acur-matcher.php';
+require_once ACURCB_DIR . 'includes/class-acur-matcher-v1.php';
+require_once ACURCB_DIR . 'includes/class-acur-embeddings.php';
 require_once ACURCB_DIR . 'includes/class-acur-rest.php';
 
 register_activation_hook(__FILE__, function () {
@@ -107,7 +115,7 @@ add_action('wp_enqueue_scripts', function () {
         'restBase'    => esc_url_raw( get_rest_url(null, 'acur-chatbot/v1/') ), // trailing slash
         'siteNonce'   => wp_create_nonce('wp_rest'),
         'siteUrl'     => home_url('/'),
-        'widgetTitle' => 'Connect with ACUR',
+        'widgetTitle' => 'Chatbot',
     ];
 
     // Attach BEFORE the script so `window.ACURCB_CFG` exists when widget.js runs

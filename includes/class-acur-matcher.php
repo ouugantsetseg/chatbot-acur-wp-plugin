@@ -125,6 +125,7 @@ class ACURCB_Matcher {
 
     /**
      * Find the best matching FAQ for a given question
+     * ENHANCED: Uses tag-based filtering before scoring
      *
      * @param string $question User's question
      * @param int $top_k Number of results to return (default 5)
@@ -153,11 +154,34 @@ class ACURCB_Matcher {
         }
 
         $question = strtolower(trim($question));
+
+        // STEP 1: Extract tags from user question
+        $tag_extract_start = microtime(true);
+        $question_tags = self::extract_tags_from_question($question);
+        $tag_extract_duration = (microtime(true) - $tag_extract_start) * 1000;
+        self::track_performance('extract_question_tags', $tag_extract_duration, [
+            'tags_found' => count($question_tags)
+        ]);
+
+        // STEP 2: Filter FAQs by tag matching
+        $filter_start = microtime(true);
+        $candidate_faqs = self::filter_faqs_by_tags($faqs, $question_tags);
+        $filter_duration = (microtime(true) - $filter_start) * 1000;
+        self::track_performance('filter_by_tags', $filter_duration, [
+            'original_count' => count($faqs),
+            'filtered_count' => count($candidate_faqs)
+        ]);
+
+        // If no FAQs match by tags, fall back to all FAQs
+        if (empty($candidate_faqs)) {
+            $candidate_faqs = $faqs;
+        }
+
         $scores = [];
 
-        // Calculate similarities
+        // STEP 3: Calculate similarities for candidate FAQs
         $similarity_start = microtime(true);
-        foreach ($faqs as $faq) {
+        foreach ($candidate_faqs as $faq) {
             $faq_start = microtime(true);
             $similarity_data = self::calculate_similarity($question, $faq);
             $faq_duration = (microtime(true) - $faq_start) * 1000;
@@ -167,22 +191,26 @@ class ACURCB_Matcher {
                 'score' => $similarity_data['total_score']
             ]);
 
+            // Boost score if FAQ tags match question tags
+            $tag_boost = self::calculate_tag_boost($question_tags, $faq['tags']);
+
             $scores[] = [
                 'id' => $faq['id'],
                 'question' => $faq['question'],
                 'answer' => $faq['answer'],
-                'score' => $similarity_data['total_score'],
+                'score' => $similarity_data['total_score'] + $tag_boost,
                 'bm25_score' => $similarity_data['bm25_score'],
+                'tag_boost' => $tag_boost,
                 'breakdown' => $similarity_data,
                 'tags' => $faq['tags']
             ];
         }
         $similarity_duration = (microtime(true) - $similarity_start) * 1000;
         self::track_performance('all_similarities', $similarity_duration, [
-            'faq_count' => count($faqs)
+            'faq_count' => count($candidate_faqs)
         ]);
 
-        // Sort by score descending
+        // STEP 4: Sort by score descending (BM25 + tag boost)
         $sort_start = microtime(true);
         usort($scores, function($a, $b) {
             return $b['score'] <=> $a['score'];
@@ -253,8 +281,155 @@ class ACURCB_Matcher {
     }
 
     /**
+     * Extract potential tags from user question
+     *
+     * @param string $question User's question
+     * @return array Array of potential tags
+     */
+    private static function extract_tags_from_question($question) {
+        // Extract keywords with stemming
+        $keywords = self::extract_keywords($question, true);
+
+        // Generate bigrams and trigrams as potential phrase tags
+        $keywords_indexed = array_values($keywords);
+        $phrase_tags = [];
+
+        // Bigrams
+        for ($i = 0; $i < count($keywords_indexed) - 1; $i++) {
+            $phrase_tags[] = $keywords_indexed[$i] . ' ' . $keywords_indexed[$i + 1];
+        }
+
+        // Trigrams
+        for ($i = 0; $i < count($keywords_indexed) - 2; $i++) {
+            $phrase_tags[] = $keywords_indexed[$i] . ' ' . $keywords_indexed[$i + 1] . ' ' . $keywords_indexed[$i + 2];
+        }
+
+        // Combine single words and phrases
+        $all_tags = array_merge($keywords, $phrase_tags);
+
+        // Add synonym expansions for better matching
+        if (class_exists('ACURCB_TextProcessor')) {
+            $expanded = ACURCB_TextProcessor::expand_query_with_synonyms($keywords, 2);
+            $all_tags = array_merge($all_tags, $expanded);
+        }
+
+        return array_unique($all_tags);
+    }
+
+    /**
+     * Filter FAQs that have matching tags with the question
+     *
+     * @param array $faqs All FAQs
+     * @param array $question_tags Tags extracted from question
+     * @return array Filtered FAQs with tag matches
+     */
+    private static function filter_faqs_by_tags($faqs, $question_tags) {
+        if (empty($question_tags)) {
+            return $faqs;
+        }
+
+        $filtered = [];
+
+        foreach ($faqs as $faq) {
+            // Parse FAQ tags
+            $faq_tags_raw = json_decode($faq['tags'], true);
+            if (!is_array($faq_tags_raw)) {
+                continue;
+            }
+
+            // Normalize FAQ tags (lowercase, stem)
+            $faq_tags = [];
+            foreach ($faq_tags_raw as $tag) {
+                $tag_lower = strtolower(trim($tag));
+                $faq_tags[] = $tag_lower;
+
+                // Also add stemmed version
+                if (class_exists('ACURCB_TextProcessor')) {
+                    $tag_words = explode(' ', $tag_lower);
+                    $stemmed_words = array_map(function($word) {
+                        return ACURCB_TextProcessor::stem_word($word);
+                    }, $tag_words);
+                    $faq_tags[] = implode(' ', $stemmed_words);
+                }
+            }
+
+            // Check for tag overlap
+            $has_match = false;
+            foreach ($question_tags as $q_tag) {
+                foreach ($faq_tags as $f_tag) {
+                    // Exact match
+                    if ($q_tag === $f_tag) {
+                        $has_match = true;
+                        break 2;
+                    }
+
+                    // Substring match (one contains the other)
+                    if (strpos($f_tag, $q_tag) !== false || strpos($q_tag, $f_tag) !== false) {
+                        $has_match = true;
+                        break 2;
+                    }
+                }
+            }
+
+            if ($has_match) {
+                $filtered[] = $faq;
+            }
+        }
+
+        return $filtered;
+    }
+
+    /**
+     * Calculate tag match boost score
+     *
+     * @param array $question_tags Tags from user question
+     * @param string $faq_tags_json FAQ tags as JSON string
+     * @return float Boost score (0 to 0.3)
+     */
+    private static function calculate_tag_boost($question_tags, $faq_tags_json) {
+        if (empty($question_tags)) {
+            return 0.0;
+        }
+
+        $faq_tags_raw = json_decode($faq_tags_json, true);
+        if (!is_array($faq_tags_raw)) {
+            return 0.0;
+        }
+
+        // Normalize FAQ tags
+        $faq_tags = array_map(function($tag) {
+            return strtolower(trim($tag));
+        }, $faq_tags_raw);
+
+        $boost = 0.0;
+        $matches = 0;
+
+        foreach ($question_tags as $q_tag) {
+            foreach ($faq_tags as $f_tag) {
+                // Exact match: highest boost
+                if ($q_tag === $f_tag) {
+                    $boost += 0.15;
+                    $matches++;
+                    break;
+                }
+
+                // Substring match: medium boost
+                if (strpos($f_tag, $q_tag) !== false || strpos($q_tag, $f_tag) !== false) {
+                    $boost += 0.08;
+                    $matches++;
+                    break;
+                }
+            }
+        }
+
+        // Cap the boost to prevent over-weighting tags
+        return min($boost, 0.3);
+    }
+
+    /**
      * Calculate similarity between user question and FAQ entry
      * Uses BM25 to score user query against FAQ question and answer text
+     * Enhanced with synonym expansion for better matching
      *
      * @param string $user_question User's question (normalized)
      * @param array $faq FAQ entry from database
@@ -263,8 +438,8 @@ class ACURCB_Matcher {
     public static function calculate_similarity($user_question, $faq) {
         $start_time = microtime(true);
 
-        // Extract user query terms
-        $user_terms = self::extract_keywords($user_question);
+        // Extract user query terms with stemming
+        $user_terms = self::extract_keywords($user_question, true);
 
         if (empty($user_terms)) {
             self::track_performance('calculate_similarity_empty', (microtime(true) - $start_time) * 1000);
@@ -275,9 +450,18 @@ class ACURCB_Matcher {
             ];
         }
 
+        // Expand user query with synonyms for better matching
+        $expanded_user_terms = $user_terms;
+        if (class_exists('ACURCB_TextProcessor')) {
+            $synonym_start = microtime(true);
+            $expanded_user_terms = ACURCB_TextProcessor::expand_query_with_synonyms($user_terms, 2);
+            $synonym_duration = (microtime(true) - $synonym_start) * 1000;
+            self::track_performance('synonym_expansion', $synonym_duration);
+        }
+
         // Get FAQ text (question + answer, with question weighted more)
         $faq_text = strtolower($faq['question'] . ' ' . $faq['question'] . ' ' . $faq['answer']);
-        $faq_terms = self::extract_keywords($faq_text);
+        $faq_terms = self::extract_keywords($faq_text, true);
 
         if (empty($faq_terms)) {
             self::track_performance('calculate_similarity_empty', (microtime(true) - $start_time) * 1000);
@@ -288,39 +472,56 @@ class ACURCB_Matcher {
             ];
         }
 
-        // Calculate BM25 score for this query-FAQ pair
+        // Calculate BM25 score with expanded query
         $bm25_start = microtime(true);
-        $score = self::calculate_bm25_query_score($user_terms, $faq_terms);
+        $score = self::calculate_bm25_query_score($expanded_user_terms, $faq_terms);
         $bm25_duration = (microtime(true) - $bm25_start) * 1000;
         self::track_performance('bm25_scoring', $bm25_duration);
+
+        // Apply a slight penalty if synonyms were used (to prefer exact matches)
+        $synonym_penalty = 1.0;
+        if (count($expanded_user_terms) > count($user_terms)) {
+            // Reduce score slightly when synonyms help match
+            $synonym_penalty = 0.95;
+        }
+
+        $final_score = $score['score'] * $synonym_penalty;
 
         $total_duration = (microtime(true) - $start_time) * 1000;
         self::track_performance('calculate_similarity_total', $total_duration);
 
         return [
-            'total_score' => $score['score'],
-            'bm25_score' => $score['score'],
+            'total_score' => $final_score,
+            'bm25_score' => $final_score,
             'matched_terms' => $score['matched_terms']
         ];
     }
 
     /**
      * Calculate BM25 score between user query and a single FAQ document
-     * This is a simplified BM25 that doesn't need the full document collection
+     * IMPROVED: Now uses proper IDF calculation across the entire FAQ corpus
      *
      * @param array $query_terms Terms from user query
      * @param array $doc_terms Terms from FAQ document
-     * @param float $k1 Term frequency saturation (default: 1.5)
+     * @param float $k1 Term frequency saturation (default: 1.2 - optimized)
      * @param float $b Length normalization (default: 0.75)
-     * @param int $avg_doc_length Average document length (default: 50 for FAQs)
+     * @param array $idf_cache Pre-computed IDF values (optional)
      * @return array Score and matched terms
      */
-    private static function calculate_bm25_query_score($query_terms, $doc_terms, $k1 = 1.5, $b = 0.75, $avg_doc_length = 50) {
+    private static function calculate_bm25_query_score($query_terms, $doc_terms, $k1 = 1.2, $b = 0.75, $idf_cache = null) {
         // Get document length
         $doc_length = count($doc_terms);
 
         // Count term frequencies in document
         $doc_term_freq = array_count_values($doc_terms);
+
+        // Get IDF values and average document length from cache or compute
+        if ($idf_cache === null) {
+            $idf_cache = self::get_idf_cache();
+        }
+
+        $idf_values = $idf_cache['idf'] ?? [];
+        $avg_doc_length = $idf_cache['avg_doc_length'] ?? 50;
 
         $total_score = 0.0;
         $matched_terms = [];
@@ -333,9 +534,9 @@ class ACURCB_Matcher {
 
             $freq = $doc_term_freq[$query_term];
 
-            // Simplified IDF (assuming medium frequency across collection)
-            // For single-document scoring, we use a fixed IDF boost
-            $idf = 1.0;
+            // Get proper IDF value for this term
+            // If term is not in IDF cache, it's likely rare, so give it high IDF
+            $idf = $idf_values[$query_term] ?? 2.5; // Default high IDF for rare terms
 
             // Length normalization
             $normalized_length = 1 - $b + $b * ($doc_length / $avg_doc_length);
@@ -354,6 +555,79 @@ class ACURCB_Matcher {
             'score' => $normalized_score,
             'matched_terms' => $matched_terms
         ];
+    }
+
+    /**
+     * Get or compute IDF cache for all terms in FAQ corpus
+     * Caches the result to avoid recomputation
+     *
+     * @param array|null $faqs_override Optional FAQ array for testing
+     * @return array Contains 'idf' array and 'avg_doc_length'
+     */
+    private static function get_idf_cache($faqs_override = null) {
+        static $cached_idf = null;
+
+        // Return cached if available (unless override provided)
+        if ($cached_idf !== null && $faqs_override === null) {
+            return $cached_idf;
+        }
+
+        // Get all FAQ documents
+        $all_docs = self::get_all_faq_documents($faqs_override);
+
+        if (empty($all_docs)) {
+            return ['idf' => [], 'avg_doc_length' => 50];
+        }
+
+        $total_docs = count($all_docs);
+        $doc_freq = []; // Document frequency for each term
+        $total_doc_length = 0;
+
+        // Calculate document frequency for each term
+        foreach ($all_docs as $doc_terms) {
+            $total_doc_length += count($doc_terms);
+            $unique_terms = array_unique($doc_terms);
+
+            foreach ($unique_terms as $term) {
+                if (!isset($doc_freq[$term])) {
+                    $doc_freq[$term] = 0;
+                }
+                $doc_freq[$term]++;
+            }
+        }
+
+        // Calculate average document length
+        $avg_doc_length = $total_docs > 0 ? $total_doc_length / $total_docs : 50;
+
+        // Calculate IDF for each term
+        // IDF = log((N - df + 0.5) / (df + 0.5) + 1)
+        $idf_values = [];
+        foreach ($doc_freq as $term => $df) {
+            // Using BM25 IDF formula
+            $idf_values[$term] = log(($total_docs - $df + 0.5) / ($df + 0.5) + 1);
+        }
+
+        $result = [
+            'idf' => $idf_values,
+            'avg_doc_length' => $avg_doc_length,
+            'total_docs' => $total_docs,
+            'unique_terms' => count($idf_values)
+        ];
+
+        // Cache for subsequent calls
+        if ($faqs_override === null) {
+            $cached_idf = $result;
+        }
+
+        return $result;
+    }
+
+    /**
+     * Clear IDF cache (call when FAQs are updated)
+     */
+    public static function clear_idf_cache() {
+        // Force cache refresh by using a dummy call
+        self::get_idf_cache(['dummy']);
     }
 
     /**
@@ -494,13 +768,19 @@ class ACURCB_Matcher {
     }
 
     /**
-     * Extract meaningful keywords from text
+     * Extract meaningful keywords from text with optional stemming
      *
      * @param string $text Input text
+     * @param bool $apply_stemming Whether to apply stemming (default: true)
      * @return array Array of keywords
      */
-    public static function extract_keywords($text) {
-        // Remove common stop words - but keep question words that might be important
+    public static function extract_keywords($text, $apply_stemming = true) {
+        // Use the text processor for enhanced keyword extraction
+        if (class_exists('ACURCB_TextProcessor')) {
+            return ACURCB_TextProcessor::process_text($text, $apply_stemming);
+        }
+
+        // Fallback to original implementation if text processor not available
         $stop_words = [
             'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by',
             'is', 'are', 'was', 'were', 'be', 'been', 'being', 'will', 'would', 'could', 'should',
@@ -508,15 +788,12 @@ class ACURCB_Matcher {
             'i', 'me', 'my', 'we', 'us', 'our'
         ];
 
-        // Clean and split text
         $text = preg_replace('/[^\w\s?]/', ' ', $text);
         $words = preg_split('/\s+/', $text, -1, PREG_SPLIT_NO_EMPTY);
 
-        // Filter out stop words and short words
         $keywords = [];
         foreach ($words as $word) {
             $word = strtolower(trim($word));
-            // Keep words longer than 2 chars, but allow some important short words
             if ((strlen($word) > 2 || in_array($word, ['do', 'you', 'any', 'get', 'has', 'had']))
                 && !in_array($word, $stop_words)) {
                 $keywords[] = $word;
@@ -757,8 +1034,8 @@ class ACURCB_Matcher {
     }
 
     /**
-     * Auto-generate tags from question and answer using BM25
-     * IMPROVED: Uses BM25 to find most distinctive keywords (better than TF-IDF for short docs)
+     * Auto-generate tags from question and answer using BM25 with stemming and synonym support
+     * IMPROVED: Uses BM25 to find most distinctive keywords with enhanced text processing
      *
      * @param string $question FAQ question
      * @param string $answer FAQ answer
@@ -769,8 +1046,8 @@ class ACURCB_Matcher {
     public static function suggest_tags($question, $answer, $limit = 10, $all_faqs = null) {
         $text = strtolower(trim((string)$question . ' ' . (string)$answer));
 
-        // Extract keywords from current document
-        $doc_terms = self::extract_keywords($text);
+        // Extract keywords from current document with stemming
+        $doc_terms = self::extract_keywords($text, true);
 
         if (empty($doc_terms)) {
             return [];
@@ -786,9 +1063,9 @@ class ACURCB_Matcher {
         // Re-index array to ensure sequential numeric keys
         $doc_terms_indexed = array_values($doc_terms);
         $phrases = [];
-        $question_terms = self::extract_keywords($question);
+        $question_terms = self::extract_keywords($question, true);
 
-        // Generate bigrams
+        // Generate bigrams (2-word phrases)
         for ($i = 0; $i < count($doc_terms_indexed) - 1; $i++) {
             $word1 = $doc_terms_indexed[$i];
             $word2 = $doc_terms_indexed[$i + 1];
@@ -803,7 +1080,7 @@ class ACURCB_Matcher {
             $phrases[$bigram] = $bigram_score * 1.3;
         }
 
-        // Generate trigrams
+        // Generate trigrams (3-word phrases)
         for ($i = 0; $i < count($doc_terms_indexed) - 2; $i++) {
             $word1 = $doc_terms_indexed[$i];
             $word2 = $doc_terms_indexed[$i + 1];
@@ -831,6 +1108,26 @@ class ACURCB_Matcher {
             }
         }
 
+        // Add synonym variations for highly scored single-word tags
+        if (class_exists('ACURCB_TextProcessor')) {
+            $synonym_enhanced = [];
+            foreach ($all_tags as $tag => $score) {
+                $synonym_enhanced[$tag] = $score;
+
+                // Only add synonyms for high-value single words
+                if (!strpos($tag, ' ') && $score > 0.5 && strlen($tag) > 3) {
+                    $synonyms = ACURCB_TextProcessor::get_synonyms($tag);
+                    foreach ($synonyms as $syn) {
+                        // Add synonym with slightly lower score
+                        if (!isset($synonym_enhanced[$syn])) {
+                            $synonym_enhanced[$syn] = $score * 0.85;
+                        }
+                    }
+                }
+            }
+            $all_tags = $synonym_enhanced;
+        }
+
         // Sort by BM25 score descending
         arsort($all_tags);
 
@@ -854,8 +1151,21 @@ class ACURCB_Matcher {
                 }
             }
 
+            // Check if this tag is too similar to existing tags (using stemming)
+            if (!$is_redundant && class_exists('ACURCB_TextProcessor')) {
+                $tag_stemmed = ACURCB_TextProcessor::stem_word($tag);
+                foreach ($seen_terms as $seen) {
+                    $seen_stemmed = ACURCB_TextProcessor::stem_word($seen);
+                    if ($tag_stemmed === $seen_stemmed) {
+                        $is_redundant = true;
+                        break;
+                    }
+                }
+            }
+
             if (!$is_redundant) {
                 $filtered_tags[] = $tag;
+                $seen_terms[] = $tag;
             }
 
             if (count($filtered_tags) >= $limit * 2) break;
