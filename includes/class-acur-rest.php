@@ -15,6 +15,7 @@ class ACURCB_REST {
                 'q' => ['required'=>true], 'session_id' => ['required'=>false],
             ]
         ]);
+        
 
         // Route for recording user feedback
         register_rest_route('acur-chatbot/v1','/feedback', [
