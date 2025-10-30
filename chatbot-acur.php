@@ -17,7 +17,7 @@ require_once ACURCB_DIR . 'includes/class-acur-admin.php';
 require_once ACURCB_DIR . 'includes/class-acur-matcher.php';
 require_once ACURCB_DIR . 'includes/class-acur-rest.php';
 
-// Register REST API routes
+// Register REST API routes for chatbot
 add_action('rest_api_init', ['ACURCB_REST', 'register_routes']);
 
 register_activation_hook(__FILE__, function () {
