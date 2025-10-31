@@ -181,7 +181,7 @@ class ACURCB_REST {
         }
 
         // 2. Define the general ACUR info (hardcoded as a reliable fallback)
-        $context = "ACUR ORGANIZATION INFO: ACUR is the Australasian Council for Undergraduate Research. We promote, celebrate, and advocate for undergraduate research across the Australasian region. The ACUR region includes: Australia, New Zealand, Pacific Island nations, and Southeast Asian countries. CONTACT: You can contact the ACUR team by email at admin@acur.org.au or by submitting an online form. \n\n";
+        $context = "ACUR ORGANIZATION INFO: ACUR is the Australasian Council for Undergraduate Research. We promote, celebrate, and advocate for undergraduate research across the Australasian region. The ACUR region includes: Australia, New Zealand, Pacific Island nations, and Southeast Asian countries. CONTACT: You can contact the ACUR team by email at admin@acur.net.au or by submitting an online form. \n\n";
         $context .= "--- ACUR CONFERENCE FAQS (Fetched dynamically) ---\n";
 
         // 3. Fetch the HTML content
