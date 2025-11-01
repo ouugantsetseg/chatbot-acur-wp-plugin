@@ -42,7 +42,7 @@ class ACURCB_Settings {
 			<h1>ACUR Chatbot — Settings</h1>
 
 			<div class="notice notice-info">
-				<p><strong>Local Matching Enabled:</strong> This chatbot now uses local PHP-based question matching with the function of external AI APIs for answering the questions and get more conversational responses. </p>
+				<p><strong>AI Chatbot Options:</strong> You can choose between AI-powered chatbot (OpenAI/Cohere) or local FAQ matching. When an AI service is enabled, it will replace the local matching completely.</p>
 			</div>
 
 			<h2>AI Chatbot Settings</h2>
@@ -58,7 +58,7 @@ class ACURCB_Settings {
 			<th>Enable Cohere API</th>
 			<td>
 				<input type="checkbox" name="cohere_enabled" value="1" <?php checked(self::get('cohere_enabled'), 1); ?> />
-				<p class="description">Enable the Cohere model as a fallback for complex questions.</p>
+				<p class="description">Enable the Cohere AI model to answer questions. When enabled, local matching will be disabled.</p>
 			</td>
 		</tr>
 		<tr>
@@ -76,7 +76,7 @@ class ACURCB_Settings {
 			<th>Enable OpenAI API</th>
 			<td>
 				<input type="checkbox" name="openai_enabled" value="1" <?php checked(self::get('openai_enabled'), 1); ?> />
-				<p class="description">Enable the OpenAI model (e.g., gpt-3.5-turbo) as a fallback. This option is prioritized over Cohere.</p>
+				<p class="description">Enable the OpenAI model (gpt-3.5-turbo) to answer questions. When enabled, local matching will be disabled. Has priority over Cohere if both are enabled.</p>
 			</td>
 		</tr>
 		<tr>
@@ -91,8 +91,8 @@ class ACURCB_Settings {
 	<p><input type="submit" class="button-primary" value="Save Settings" /></p>
 </form>
 
-			<h2>How It Works</h2>
-			<p>The chatbot uses advanced text similarity algorithms to match user questions with your FAQ entries:</p>
+			<h2>Local Matching (When AI is Disabled)</h2>
+			<p>When both AI services are disabled, the chatbot uses advanced text similarity algorithms to match user questions with your FAQ entries:</p>
 			<ul>
 				<li><strong>Keyword Matching:</strong> Identifies common words between user questions and FAQ content</li>
 				<li><strong>Text Similarity:</strong> Uses Jaccard similarity and Levenshtein distance for fuzzy matching</li>
@@ -102,13 +102,14 @@ class ACURCB_Settings {
 			
 			<hr>
 
-			<h2>API Key Functioning</h2>
-			<p>External API keys enable the chatbot to answer complex or general knowledge questions not covered in the local FAQ. This is known as the **Fallback Mechanism**.</p>
+			<h2>How AI Chatbot Works</h2>
+			<p>You can configure the chatbot to use AI services (OpenAI or Cohere) or local FAQ matching. Here's how the priority system works:</p>
 			<ul>
-				<li><strong>Prioritization:</strong> The chatbot first attempts to find a match in the local FAQ. If the match score is low, it checks for an external API key.</li>
-				<li><strong>OpenAI Key (`openai_key`):</strong> If provided and enabled, the chatbot uses the OpenAI **GPT-3.5-turbo** model as the primary LLM fallback. It is designed to be the fastest and most cost-effective solution.</li>
-				<li><strong>Cohere Key (`cohere_key`):</strong> If provided and enabled, the chatbot uses the Cohere **Command** model as a secondary LLM fallback, only if the OpenAI key is missing or fails.</li>
-				<li><strong>Billing & Limits:</strong> Both keys operate on a **pay-as-you-go** model (or a limited free trial). Usage limits apply to all external API calls. If both keys are missing or their accounts run out of credit, the chatbot will default to the **"Sorry, I couldn't find an answer"** message.</li>
+				<li><strong>Priority 1 - OpenAI:</strong> If OpenAI is enabled and API key is provided, the chatbot will use OpenAI GPT-3.5-turbo model exclusively. Local matching is disabled.</li>
+				<li><strong>Priority 2 - Cohere:</strong> If only Cohere is enabled and API key is provided, the chatbot will use Cohere Command model exclusively. Local matching is disabled.</li>
+				<li><strong>Priority 3 - Local Matching:</strong> If both AI services are disabled, the chatbot will use local PHP-based FAQ matching.</li>
+				<li><strong>Both Enabled:</strong> If both OpenAI and Cohere are enabled, OpenAI takes priority and Cohere is ignored.</li>
+				<li><strong>Billing & Limits:</strong> AI services operate on a pay-as-you-go model. Monitor your usage to avoid unexpected costs. Free trials may have usage limits.</li>
 			</ul>
 
 			<hr>

@@ -43,7 +43,8 @@ class ACURCB_REST {
     }
 
     /**
-     * Handles the /match route: Performs local FAQ matching.
+     * Handles the /match route: Uses AI (OpenAI/Cohere) if enabled, otherwise performs local FAQ matching.
+     * Priority: OpenAI > Cohere > Local Matching
      * @param WP_REST_Request $req The request object.
      * @return WP_REST_Response
      */
@@ -55,7 +56,55 @@ class ACURCB_REST {
             return new WP_REST_Response(['detail' => 'Question parameter is required'], 400);
         }
 
-        // Use local matcher instead of external API
+        // Check if OpenAI is enabled (Priority 1)
+        $openai_enabled = ACURCB_Settings::get('openai_enabled');
+        $openai_key = ACURCB_Settings::get('openai_key');
+
+        if ($openai_enabled && !empty($openai_key)) {
+            // Use OpenAI instead of local matching
+            $answer = self::ask_openai($question, $openai_key, $session_id);
+            if ($answer) {
+                return new WP_REST_Response([
+                    'answer' => $answer,
+                    'score' => 0.95,
+                    'source' => 'openai',
+                    'id' => null
+                ], 200);
+            }
+            // If OpenAI fails, return error
+            return new WP_REST_Response([
+                'answer' => "Sorry, I'm having trouble connecting to the AI service. Please try again later.",
+                'score' => 0,
+                'source' => 'error',
+                'id' => null
+            ], 200);
+        }
+
+        // Check if Cohere is enabled (Priority 2)
+        $cohere_enabled = ACURCB_Settings::get('cohere_enabled');
+        $cohere_key = ACURCB_Settings::get('cohere_key');
+
+        if ($cohere_enabled && !empty($cohere_key)) {
+            // Use Cohere instead of local matching
+            $answer = self::ask_cohere($question, $cohere_key, $session_id);
+            if ($answer) {
+                return new WP_REST_Response([
+                    'answer' => $answer,
+                    'score' => 0.95,
+                    'source' => 'cohere',
+                    'id' => null
+                ], 200);
+            }
+            // If Cohere fails, return error
+            return new WP_REST_Response([
+                'answer' => "Sorry, I'm having trouble connecting to the AI service. Please try again later.",
+                'score' => 0,
+                'source' => 'error',
+                'id' => null
+            ], 200);
+        }
+
+        // Use local matcher if both AI services are disabled (Priority 3)
         $result = ACURCB_Matcher::match($question, 5);
 
         return new WP_REST_Response($result, 200);
@@ -276,8 +325,8 @@ class ACURCB_REST {
     }
 
     /**
-     * Calls the OpenAI Chat Completions API using the Bearer token authorization scheme and RAG context.
-     * (NEW FUNCTION - ADDED)
+     * Calls the OpenAI Chat Completions API using the Bearer token authorization scheme.
+     * Uses website URL context for answering questions.
      * @param string $question The user's query.
      * @param string $apiKey The OpenAI API key.
      * @param string $session_id The user's session ID (for conversation history, though not fully used here).
@@ -285,22 +334,34 @@ class ACURCB_REST {
      */
     public static function ask_openai($question, $apiKey, $session_id = null) {
         $endpoint = "https://api.openai.com/v1/chat/completions";
-        $model_name = 'gpt-3.5-turbo'; // Recommended for cost-effective testing 
+        $model_name = 'gpt-3.5-turbo'; // Recommended for cost-effective testing
 
-        // 1. Dynamically retrieve the ACUR context (Cached!)
-        $acur_context = self::get_acur_context_cached(); 
-        
-        // 2. Define the system instructions and persona
-        $system_prompt = "You are the ACUR Chatbot, a helpful and professional assistant for the Australasian Council for Undergraduate Research (ACUR). Your primary goal is to answer user questions accurately using the provided context about ACUR's conferences and policies. If the answer to a specific ACUR question is not in the context, you must state that the information is not currently available in your knowledge base. For general knowledge questions (like math or science), you may use your general knowledge, but prioritize ACUR info.";
+        // Get the current website information
+        $site_url = home_url();
+        $site_name = get_bloginfo('name');
+        $site_description = get_bloginfo('description');
 
-        // 3. Construct the RAG payload for OpenAI (System + Context + User Message)
+        // Define the system instructions and persona with website context
+        $system_prompt = "You are a helpful AI assistant for {$site_name}.
+
+Website: {$site_url}
+Description: {$site_description}
+
+Your role is to help users by answering questions about the website and its content. When answering:
+- Be professional, friendly, and concise
+- Provide accurate and helpful information
+- If you're unsure about specific details, acknowledge that politely
+- Maintain a supportive and conversational tone
+- Base your answers on the context of this website: {$site_url}";
+
+        // Construct the payload for OpenAI
         $body = [
-            'model' => $model_name, 
+            'model' => $model_name,
             'messages' => [
-                // System message sets the persona and includes the RAG context
+                // System message sets the persona and context
                 [
                     'role' => 'system',
-                    'content' => "CONTEXT:\n" . $acur_context . "\n\nINSTRUCTIONS: " . $system_prompt,
+                    'content' => $system_prompt,
                 ],
                 // User's message
                 [
@@ -308,14 +369,14 @@ class ACURCB_REST {
                     'content' => $question,
                 ],
             ],
-            'temperature' => 0.2, // Lower temperature for more factual, context-based answers
-            'max_tokens' => 300 // Tokens for detailed RAG answers
+            'temperature' => 0.7, // Balanced temperature for conversational responses
+            'max_tokens' => 300 // Tokens for detailed answers
         ];
-        
+
         $response = wp_remote_post($endpoint, [
             'headers' => [
                 // Authorization header uses the Bearer Token scheme
-                'Authorization' => 'Bearer ' . $apiKey, 
+                'Authorization' => 'Bearer ' . $apiKey,
                 'Content-Type' => 'application/json'
             ],
             'body' => wp_json_encode($body),
@@ -335,7 +396,7 @@ class ACURCB_REST {
             error_log('OpenAI API HTTP Error: ' . $http_status . ' - ' . ($data['error']['message'] ?? 'Unknown Error'));
             return false;
         }
-        
+
         // OpenAI response is parsed to get the 'content' field from the first choice's message
         // Structure: $data['choices'][0]['message']['content']
         return $data['choices'][0]['message']['content'] ?? false;
